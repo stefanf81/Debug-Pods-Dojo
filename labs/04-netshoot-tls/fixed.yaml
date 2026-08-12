@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dojo-04-tls
+  labels: {debug-dojo: "true"}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: tls, namespace: dojo-04-tls}
+type: kubernetes.io/tls
+stringData:
+  tls.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIDZjCCAk6gAwIBAgIUchjgariRdVTHEERGLenj6YcWVnwwDQYJKoZIhvcNAQEL
+    BQAwGTEXMBUGA1UEAwwOZG9qby10bHMubG9jYWwwHhcNMjYwODA5MTY0NDEzWhcN
+    MzYwODA2MTY0NDEzWjAZMRcwFQYDVQQDDA5kb2pvLXRscy5sb2NhbDCCASIwDQYJ
+    KoZIhvcNAQEBBQADggEPADCCAQoCggEBAOF8bes4PyoqdeLe3jvZZr7OHkRwDUre
+    O+V8i3K8CvFAJJ8AYWdA45JrKceE8PAkw+wmsYzgWBFvUi9eqhNYywCc3pg4yMQY
+    BUXPbkZSsqeN+iswcapYrvD8wf8YP0m6YBboW1YMV6dVYAov1Gp7bxIzTwoep5zl
+    DJ34sbBQj/CfLmtOelxDy3vSZoQXa2gz0r4BfYjrCa7GDWq0rdDHebTJKEvCItNX
+    BIOzR8N47WsMjv1DlcEWkZdlueaX91XXsdwb1BB8WzGQs7XXMLW95zZKFXmFfU1F
+    qcE2x1ikaurddjM/bkxMfenf9OrfGnPVGAthehutfjiaLMZIfy9RyP8CAwEAAaOB
+    pTCBojAdBgNVHQ4EFgQUmtxTXELJwGnxBG6tvdvVhsJhnQowHwYDVR0jBBgwFoAU
+    mtxTXELJwGnxBG6tvdvVhsJhnQowDwYDVR0TAQH/BAUwAwEB/zBPBgNVHREESDBG
+    gg5kb2pvLXRscy5sb2NhbIIKdGxzLXNlcnZlcoIodGxzLXNlcnZlci5kb2pvLTA0
+    LXRscy5zdmMuY2x1c3Rlci5sb2NhbDANBgkqhkiG9w0BAQsFAAOCAQEAUFiu+mME
+    W+bhpXDbd77Hn3QsUCI4ur6xy3D8v38Ta52HeWaeW//f4G73isn//vpF2FaZupwg
+    TFvTjnoGLhhSVkU5dFh7T59iYbyEx9BU2gfdbVAt6uxJKAUnhnhWFZMosrq6vReH
+    hKggpWFe21M6QloVM8PkP2TQoJxtRE/kbGsrzcfWE7Ucgn4ueRb5HsOai6c5LT/0
+    bnDS7SzYseyhIklqMTxCmOkbbHO2aK/4skL0ano6xbRz63QSt2VByhHuV7h8DcUB
+    n03/qSzEjgB+GSeuwWd6kDrXXItZDmMP7/I/w4mc3jy5KdDO3Hx56iXrui3ZwOwj
+    z55IWXBksXOIMw==
+    -----END CERTIFICATE-----
+  tls.key: |
+    -----BEGIN PRIVATE KEY-----
+    MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDhfG3rOD8qKnXi
+    3t472Wa+zh5EcA1K3jvlfItyvArxQCSfAGFnQOOSaynHhPDwJMPsJrGM4FgRb1Iv
+    XqoTWMsAnN6YOMjEGAVFz25GUrKnjforMHGqWK7w/MH/GD9JumAW6FtWDFenVWAK
+    L9Rqe28SM08KHqec5Qyd+LGwUI/wny5rTnpcQ8t70maEF2toM9K+AX2I6wmuxg1q
+    tK3Qx3m0yShLwiLTVwSDs0fDeO1rDI79Q5XBFpGXZbnml/dV17HcG9QQfFsxkLO1
+    1zC1vec2ShV5hX1NRanBNsdYpGrq3XYzP25MTH3p3/Tq3xpz1RgLYXobrX44mizG
+    SH8vUcj/AgMBAAECggEALL5An37DRe40A0c/KPgcQ7tp1SG4+YS8tO5wS12V/EZC
+    ngx4x4DgR4MdQLqYBsb826TX8YDo6NjCoaSysfEaIy59mw4VhJfRoAcntiudyNLK
+    8/wCag9781Tsd96LXGlvvMvxp9L+J7Wwv4S7LT/+C8oDopnvn5nx1XzuYXKzBUdp
+    kVzMuDCMu8INyFI3uI7x5uqy8tl6qDg7qX3sk36UY6mgtSfy8uT34D23x+MsgaW7
+    WVvXZIOo8Whn88bmqdnBsupLHlgiQO1IBLmMCd93pzFE/JjMM2/judUEwMRIEkX6
+    VTJY3wu71+N4Emi+QV7DBikxA+qZwziwAdVzFRhrVQKBgQD2FYOTN0RFJ9Mm8P32
+    T0kn0EZgzwin6L3STrRxjR7UdVoQODiLhHJ/4kOWldXEBQkhrhIUIKa6sHiuJoHz
+    DSb0ivmnMmI/slvUQvAhJD2q06zCF9wAw8lQzRd/WZRpicKH3wr0XPltSM9YxNJ/
+    whjKpJuDHbJVsIe0IjkeHkQOtQKBgQDqkm+1T5edyYOIt/Da8dPuhYEK62ydA11N
+    2HVSyT3QipA1JW2x096qim6UVkJex3s+KSrHYBB0SUcUi9BmcNIijlh/KPsKsbL6
+    rHs6dGzicGVbOA0ZW17lD4ySy6xAmSOUpfIJU3txLJv0WhTmAj0x+KN47JEl/uAF
+    zhvwrmZVYwKBgQD0cHxpII3ND/kbhmkOYMVvKeCuyxhzCap8nDd7T82fBw62a9In
+    LCI8S7oNe7qCYuomLW3B1okniqHlg1Sz5I2cfevtHAwh735uAyvaD9C9vlOt3Ntp
+    WxG/FGpR0t6sUu4L3w9Xmn8dAiUMrT3XMCtGJ2pePIJnwdmaoiAQfcnmvQKBgQCj
+    t7Lp2/RZN2Vrjd44IeKmLl3Dbk8vQ0Li6znvnu9a1usRfN8T52kYpGfLdmz6U8Yr
+    u3XVE7JIR0CqEW9RoFq5rZoMnmCgtSfTF4Emak34uTO0t+lEkmYn/3NAnZDKwVd5
+    D11frvmQIu9yW1EMu/FUKFKIOqyP1VUsGA+eK0rXOwKBgQDQnV9vL3kUrArBXCUN
+    bGKmD1oYdYLCvuPi8GRtkQmyhJHwYs8HZUG94k1yCmtW9yrgSglCY3i89p8le4jR
+    pefEL/G338i5Z2nP9WRREtf0TIEyHz2PiYeiXZFQq532r2/gBW+mtsI56b0Zaoeg
+    ul5bGXFqqHrSAQzvXIkbQx0q/w==
+    -----END PRIVATE KEY-----
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: nginx-conf, namespace: dojo-04-tls}
+data:
+  nginx.conf: |
+    events {}
+    http {
+      server {
+        listen 8080;
+        location /health { return 200 "PLAIN-HTTP\\n"; }
+      }
+      server {
+        listen 8443 ssl;
+        ssl_certificate /etc/nginx/tls/tls.crt;
+        ssl_certificate_key /etc/nginx/tls/tls.key;
+        location /health { return 200 "TLS-OK\\n"; }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: tls-server, namespace: dojo-04-tls}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: tls-server}}
+  template:
+    metadata: {labels: {app: tls-server}}
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          command: ["nginx","-g","daemon off;","-c","/etc/nginx/nginx.conf"]
+          ports: [{name: http, containerPort: 8080}, {name: https, containerPort: 8443}]
+          volumeMounts:
+            - {name: conf, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf}
+            - {name: tls, mountPath: /etc/nginx/tls, readOnly: true}
+      volumes:
+        - name: conf
+          configMap: {name: nginx-conf}
+        - name: tls
+          secret: {secretName: tls}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: tls-server, namespace: dojo-04-tls}
+spec:
+  selector: {app: tls-server}
+  ports: [{name: https, port: 443, targetPort: 8443}]

@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dojo-07-java-cpu
+  labels: {debug-dojo: "true"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api, namespace: dojo-07-java-cpu}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec:
+      volumes: [{name: shared-tmp, emptyDir: {}}]
+      containers:
+        - name: app
+          image: debug-dojo-java:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: DOJO_MODE, value: cpu}
+            - {name: JAVA_TOOL_OPTIONS, value: "-XX:NativeMemoryTracking=summary"}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: "1", memory: 256Mi}
+          volumeMounts: [{name: shared-tmp, mountPath: /tmp}]
+          ports: [{containerPort: 8080}]

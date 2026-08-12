@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dojo-06-throughput
+  labels: {debug-dojo: "true"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: iperf-server, namespace: dojo-06-throughput}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: iperf-server}}
+  template:
+    metadata: {labels: {app: iperf-server}}
+    spec:
+      containers:
+        - name: server
+          image: nicolaka/netshoot:v0.16
+          command: ["iperf3","-s"]
+          ports: [{containerPort: 5201}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: iperf-server, namespace: dojo-06-throughput}
+spec:
+  selector: {app: iperf-server}
+  ports: [{name: iperf, port: 5201, targetPort: 5201}]

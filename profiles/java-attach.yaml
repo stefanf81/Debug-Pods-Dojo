@@ -1,0 +1,10 @@
+securityContext:
+  runAsUser: 65532
+  runAsGroup: 65532
+  allowPrivilegeEscalation: false
+env:
+  - name: HOME
+    value: /tmp
+volumeMounts:
+  - name: shared-tmp
+    mountPath: /tmp

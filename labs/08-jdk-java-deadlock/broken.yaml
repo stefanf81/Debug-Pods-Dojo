@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dojo-08-java-deadlock
+  labels: {debug-dojo: "true"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api, namespace: dojo-08-java-deadlock}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec:
+      volumes: [{name: shared-tmp, emptyDir: {}}]
+      containers:
+        - name: app
+          image: debug-dojo-java:local
+          imagePullPolicy: IfNotPresent
+          env: [{name: DOJO_MODE, value: deadlock}]
+          volumeMounts: [{name: shared-tmp, mountPath: /tmp}]
+          ports: [{containerPort: 8080}]

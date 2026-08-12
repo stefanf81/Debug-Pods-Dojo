@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dojo-13-perf
+  labels: {debug-dojo: "true"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: writer, namespace: dojo-13-perf}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: writer}}
+  template:
+    metadata: {labels: {app: writer}}
+    spec:
+      volumes: [{name: data, emptyDir: {}}, {name: shared-tmp, emptyDir: {}}]
+      containers:
+        - name: app
+          image: debug-dojo-java:local
+          imagePullPolicy: IfNotPresent
+          env: [{name: DOJO_MODE, value: normal}, {name: WRITE_PATH, value: /data/dojo.txt}]
+          volumeMounts: [{name: data, mountPath: /data}, {name: shared-tmp, mountPath: /tmp}]
+          ports: [{containerPort: 8080}]

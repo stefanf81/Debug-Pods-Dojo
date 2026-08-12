@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dojo-02-dns
+  labels: {debug-dojo: "true"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: backend, namespace: dojo-02-dns}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: backend}}
+  template:
+    metadata: {labels: {app: backend}}
+    spec:
+      containers:
+        - {name: app, image: debug-dojo-java:local, imagePullPolicy: IfNotPresent, ports: [{containerPort: 8080}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: backend, namespace: dojo-02-dns}
+spec:
+  selector: {app: backend}
+  ports: [{port: 8080, targetPort: 8080}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: caller, namespace: dojo-02-dns}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: caller}}
+  template:
+    metadata: {labels: {app: caller}}
+    spec:
+      containers:
+        - name: app
+          image: debug-dojo-java:local
+          imagePullPolicy: IfNotPresent
+          env: [{name: DEPENDENCY_URL, value: "http://backned:8080/health"}]
+          ports: [{containerPort: 8080}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: caller, namespace: dojo-02-dns}
+spec:
+  selector: {app: caller}
+  ports: [{port: 8080, targetPort: 8080}]

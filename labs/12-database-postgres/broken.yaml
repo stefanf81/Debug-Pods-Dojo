@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dojo-12-db
+  labels: {debug-dojo: "true"}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: postgres-auth, namespace: dojo-12-db}
+type: Opaque
+stringData: {username: dojo, password: dojo-pass, database: dojo}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: postgres, namespace: dojo-12-db}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: postgres}}
+  template:
+    metadata: {labels: {app: postgres}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18.4
+          env:
+            - name: POSTGRES_USER
+              valueFrom: {secretKeyRef: {name: postgres-auth, key: username}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: postgres-auth, key: password}}
+            - name: POSTGRES_DB
+              valueFrom: {secretKeyRef: {name: postgres-auth, key: database}}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec: {command: ["pg_isready","-U","dojo","-d","dojo"]}
+            periodSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgres, namespace: dojo-12-db}
+spec:
+  selector: {app: postgres}
+  ports: [{port: 5432, targetPort: 5432}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: db-client, namespace: dojo-12-db}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: db-client}}
+  template:
+    metadata: {labels: {app: db-client}}
+    spec:
+      containers:
+        - name: client
+          image: postgres:18.4
+          env:
+            - {name: PGUSER, value: dojo}
+            - {name: PGDATABASE, value: dojo}
+            - {name: PGPASSWORD, value: wrong-password}
+          command: ["sh","-c"]
+          args:
+            - |
+              while true; do
+                psql -h postgres -c 'select current_database(), current_user;' || true
+                sleep 10
+              done

@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dojo-09-java-memory
+  labels: {debug-dojo: "true"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api, namespace: dojo-09-java-memory}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: api}}
+  template:
+    metadata: {labels: {app: api}}
+    spec:
+      volumes: [{name: shared-tmp, emptyDir: {}}]
+      containers:
+        - name: app
+          image: debug-dojo-java:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: DOJO_MODE, value: leak}
+            - {name: LEAK_CHUNK_MIB, value: "1"}
+            - {name: LEAK_DELAY_MS, value: "3000"}
+            - {name: JAVA_TOOL_OPTIONS, value: "-Xms64m -Xmx192m -XX:NativeMemoryTracking=summary -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/oome.hprof"}
+          resources:
+            requests: {cpu: 20m, memory: 96Mi}
+            limits: {cpu: "1", memory: 384Mi}
+          volumeMounts: [{name: shared-tmp, mountPath: /tmp}]
+          ports: [{containerPort: 8080}]

@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dojo-14-node
+  labels: {debug-dojo: "true"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: port-holder, namespace: dojo-14-node}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: port-holder}}
+  template:
+    metadata: {labels: {app: port-holder}}
+    spec:
+      hostNetwork: true
+      containers:
+        - name: holder
+          image: busybox:1.37
+          command: ["httpd","-f","-p","18080"]
+          ports: [{containerPort: 18080, hostPort: 18080}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: victim, namespace: dojo-14-node}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: victim}}
+  template:
+    metadata: {labels: {app: victim}}
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector: {matchLabels: {app: port-holder}}
+              topologyKey: kubernetes.io/hostname
+      hostNetwork: true
+      containers:
+        - name: victim
+          image: busybox:1.37
+          command: ["httpd","-f","-p","18080"]
+          ports: [{containerPort: 18080, hostPort: 18080}]
