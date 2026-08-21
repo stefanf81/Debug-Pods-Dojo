@@ -6,21 +6,6 @@ This edition intentionally removes generic Kubernetes exercises that are better 
 
 > Safety: the project intentionally creates CPU load, memory growth, failed connectivity, privileged debug sessions and synthetic storage tests. Run it only in the disposable k3d cluster created by this repository.
 
-
-## Validate the actual learner commands
-
-`make e2e` verifies the broken/fixed reference states. A separate command-level suite now validates the actual debug-image workflows and binaries documented in `LABS.md`:
-
-```bash
-make command-e2e
-```
-
-It creates a separate disposable `debug-pods-dojo-command-e2e` cluster, exercises throwaway debug Pods, ephemeral `kubectl debug` containers, custom debug profiles, node debug Pods, JDK attach, Arthas attach, storage/DB/perf/stress toolboxes, and gProfiler, then deletes the cluster and restores your previous kubeconfig context. Set `KEEP_CLUSTER=1` to retain the test cluster after the run.
-
-The frozen v9 release has been run end-to-end with this target and completed with **22 PASS, 0 SKIP**. On the validated Rancher Desktop environment, full gProfiler perf mode was unavailable, so the suite correctly exercised and passed the documented runtime-only fallback.
-
-`./scripts/validate.sh` also includes a local Java 21 `java -jar`/`jcmd` smoke test so PID-selection and nested-shell quoting mistakes are caught before the cluster-level suite runs.
-
 ## Debug images covered
 
 | Debug image | Labs | Main capabilities exercised |
@@ -34,24 +19,6 @@ The frozen v9 release has been run end-to-end with this target and completed wit
 | `tazhate/k8s-debug-container-stress` | 15 | hey, stress-ng, sysbench, controlled load |
 | `intel/gprofiler:latest` | 16 | system-wide CPU profiles and local flamegraphs |
 
-`grafana/alloy` + Pyroscope is intentionally not part of this dojo because it is a continuously deployed observability/profiling component rather than an on-demand debug Pod.
-
-## What was removed from v2
-
-These labs were removed because the debug image was optional or irrelevant to the core lesson:
-
-- CrashLoop startup configuration
-- readiness/liveness/startup probes
-- ImagePullBackOff
-- init-container failure
-- missing ConfigMap key
-- RBAC / ServiceAccount
-- impossible resource requests
-- Pending PVC / StorageClass
-- HPA unknown metrics
-- ResourceQuota
-
-Those are good Kubernetes troubleshooting exercises, but they do not specifically train debug-container functionality.
 
 ## Prerequisites
 
