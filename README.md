@@ -6,29 +6,6 @@ This edition intentionally removes generic Kubernetes exercises that are better 
 
 > Safety: the project intentionally creates CPU load, memory growth, failed connectivity, privileged debug sessions and synthetic storage tests. Run it only in the disposable k3d cluster created by this repository.
 
-## Release status — fully validated v9
-
-**v9-command-validated is the first frozen, fully validated release of the Debug Pods Dojo.**
-
-On **August 12, 2026**, the complete learner-command suite was executed successfully on a real **Rancher Desktop + k3d** environment using the repository's disposable **1-server + 2-agent** cluster:
-
-```text
-Command-level test complete: 22 PASS, 0 SKIP
-Cluster: k3d-debug-pods-dojo-command-e2e
-COMMAND E2E: PASS
-```
-
-The successful run covered all 16 lab scenarios and the complete supported debug-tool surface: Netshoot, Temurin/JDK diagnostics, Arthas, storage, PostgreSQL, syscall/performance debugging, node debugging, load generation, metrics, and gProfiler's runtime-only fallback.
-
-This runtime validation is in addition to the normal broken/fixed-state E2E suite and the local/static validation performed by `scripts/validate.sh`. See [`COMMAND-VALIDATION.md`](COMMAND-VALIDATION.md) for the validation matrix and [`CHANGELOG.md`](CHANGELOG.md) for the release history.
-
-Confirm the package revision before testing:
-
-```bash
-cat VERSION
-```
-
-For this package it should print `v9-command-validated`.
 
 ## Validate the actual learner commands
 
