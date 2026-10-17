@@ -4,7 +4,7 @@
 
 ## Goal
 
-The Java heap steadily grows. Attach before it reaches OOM and determine what is accumulating.
+The Java heap steadily grows. Attach before it reaches OOM and determine what is accumulating. On OOM the JVM writes `/tmp/oome.hprof` and exits, and the container restarts with a fresh heap.
 
 ## What to practice
 

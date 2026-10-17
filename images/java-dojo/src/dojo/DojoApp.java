@@ -16,13 +16,15 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 public final class DojoApp {
-    private static final List<byte[]> LEAK = new ArrayList<>();
+    private static final List<byte[]> LEAK = Collections.synchronizedList(new ArrayList<>());
     private static final Object LOCK_A = new Object();
     private static final Object LOCK_B = new Object();
     private static final AtomicLong CPU_COUNTER = new AtomicLong();
@@ -66,7 +68,8 @@ public final class DojoApp {
                 "pid=" + ProcessHandle.current().pid() + "\n" +
                 "mode=" + mode + "\n" +
                 "leakChunks=" + LEAK.size() + "\n" +
-                "cpuCounter=" + CPU_COUNTER.get() + "\n"));
+                "cpuCounter=" + CPU_COUNTER.get() + "\n" +
+                "dojoThreads=" + dojoThreads() + "\n"));
         server.createContext("/dojo", ex -> text(ex, 200,
                 "Kubernetes Debug Dojo via Ingress\n" +
                 "pod=" + pod + "\n" +
@@ -127,9 +130,10 @@ public final class DojoApp {
     private static void startMemoryLeak() {
         Thread t = new Thread(() -> {
             long mib = Long.parseLong(env("LEAK_CHUNK_MIB", "8"));
+            int chunkBytes = Math.toIntExact(mib * 1024 * 1024);
             long delay = Long.parseLong(env("LEAK_DELAY_MS", "500"));
             while (true) {
-                LEAK.add(new byte[(int)(mib * 1024 * 1024)]);
+                LEAK.add(new byte[chunkBytes]);
                 System.out.printf("leak: retained %d chunks (~%d MiB)%n", LEAK.size(), LEAK.size() * mib);
                 sleep(delay);
             }
@@ -151,6 +155,16 @@ public final class DojoApp {
         }, "dojo-pvc-writer");
         t.setDaemon(true);
         t.start();
+    }
+
+    // Live fault-injection threads; check-lab.sh treats an empty list as "returned to normal mode".
+    private static String dojoThreads() {
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(Thread::isAlive)
+                .map(Thread::getName)
+                .filter(name -> name.startsWith("dojo-"))
+                .sorted()
+                .collect(Collectors.joining(","));
     }
 
     public static String slowWork() {

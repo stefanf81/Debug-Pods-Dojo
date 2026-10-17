@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DOJO_VERSION="$(cat "$ROOT/VERSION" 2>/dev/null || echo unknown)"
-echo "==> Debug Pods Dojo ${DOJO_VERSION}"
-CLUSTER="${CLUSTER:-debug-pods-dojo}"
+source "$ROOT/scripts/lib.sh"
+echo "==> Debug Pods Dojo"
 BUILD_IMAGE="${IMAGE:-debug-dojo-java:local}"
 LAB_IMAGE="debug-dojo-java:local"
 ARTHAS_IMAGE="debug-dojo-arthas-jdk21:local"
-CONTEXT="k3d-${CLUSTER}"
+CONTEXT="$DOJO_CONTEXT"
+# Host port for the k3d load balancer (Ingress). Override to run several dojo clusters side by side.
+INGRESS_PORT="${INGRESS_PORT:-8080}"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 1; }; }
 need docker
 need k3d
 need kubectl
+
+lab_list="$(selected_labs "$ROOT")"
+mapfile -t labs <<<"$lab_list"
 
 wait_deployment() {
   local namespace="$1" name="$2"
@@ -32,11 +36,11 @@ docker build -t "$ARTHAS_IMAGE" "$ROOT/images/arthas-jdk21"
 if k3d cluster list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qx "$CLUSTER"; then
   echo "==> k3d cluster '$CLUSTER' already exists"
 else
-  echo "==> Creating 1-server + 2-agent k3d cluster"
+  echo "==> Creating 1-server + 2-agent k3d cluster (Ingress on host port $INGRESS_PORT)"
   k3d cluster create "$CLUSTER" \
     --servers 1 \
     --agents 2 \
-    --port "8080:80@loadbalancer" \
+    --port "${INGRESS_PORT}:80@loadbalancer" \
     --wait \
     --timeout 180s
 fi
@@ -51,12 +55,14 @@ wait_deployment kube-system coredns
 wait_deployment kube-system metrics-server
 wait_deployment kube-system traefik
 
-echo "==> Deploying 16 debug-pod-focused scenarios"
-for lab in "$ROOT"/labs/*; do
-  [[ -f "$lab/broken.yaml" ]] || continue
+echo "==> Deploying ${#labs[@]} debug-pod-focused scenarios"
+for lab in "${labs[@]}"; do
   echo "    $(basename "$lab")"
   kubectl --context "$CONTEXT" apply -f "$lab/broken.yaml" >/dev/null
 done
+
+# An existing cluster keeps the port it was created with, so report the real mapping.
+ingress_port="$(docker port "k3d-${CLUSTER}-serverlb" 80/tcp 2>/dev/null | head -1 | sed 's/.*://')"
 
 cat <<EOF
 
@@ -69,5 +75,5 @@ Check:   $ROOT/scripts/check-lab.sh <number>
 Reset:   $ROOT/scripts/reset-lab.sh <number>
 Fix:     $ROOT/scripts/solve-lab.sh <number>
 
-Ingress exercise: http://localhost:8080/dojo
+Ingress exercise: http://localhost:${ingress_port:-$INGRESS_PORT}/dojo
 EOF

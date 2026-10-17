@@ -22,7 +22,7 @@ spec:
             - {name: DOJO_MODE, value: normal}
             - {name: LEAK_CHUNK_MIB, value: "1"}
             - {name: LEAK_DELAY_MS, value: "3000"}
-            - {name: JAVA_TOOL_OPTIONS, value: "-Xms64m -Xmx192m -XX:NativeMemoryTracking=summary -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/oome.hprof"}
+            - {name: JAVA_TOOL_OPTIONS, value: "-Xms64m -Xmx192m -XX:NativeMemoryTracking=summary -XX:+HeapDumpOnOutOfMemoryError -XX:+ExitOnOutOfMemoryError -XX:HeapDumpPath=/tmp/oome.hprof"}
           resources:
             requests: {cpu: 20m, memory: 96Mi}
             limits: {cpu: "1", memory: 384Mi}

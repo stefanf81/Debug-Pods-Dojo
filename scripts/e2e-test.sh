@@ -2,6 +2,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export CLUSTER="${CLUSTER:-debug-pods-dojo-e2e}"
+# Use a separate host port so the test can run while the main dojo cluster is up.
+export INGRESS_PORT="${INGRESS_PORT:-8180}"
+unset LABS
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 ORIGINAL_CONTEXT=""
 

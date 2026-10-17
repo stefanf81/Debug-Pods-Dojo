@@ -17,7 +17,9 @@ This edition intentionally removes generic Kubernetes exercises that are better 
 | `tazhate/k8s-debug-container-db` | 12 | pg_isready, psql, DB connectivity/auth |
 | `tazhate/k8s-debug-container-perf` | 13 | ps/htop, strace, /proc, perf/BCC where supported |
 | `tazhate/k8s-debug-container-stress` | 15 | hey, stress-ng, sysbench, controlled load |
-| `intel/gprofiler:latest` | 16 | system-wide CPU profiles and local flamegraphs |
+| `intel/gprofiler:1.57.1` | 16 | system-wide CPU profiles and local flamegraphs |
+
+Third-party and privileged debug images are pinned by digest in `LABS.md` and the test scripts, and the image build bases are pinned in the Dockerfiles. `./scripts/validate.sh` rejects unpinned references.
 
 
 ## Prerequisites
@@ -30,9 +32,16 @@ This edition intentionally removes generic Kubernetes exercises that are better 
 ## Start
 
 ```bash
-chmod +x scripts/*.sh
-./scripts/up.sh
+./scripts/up.sh        # or: make up
 ```
+
+Every lab is deployed by default. Labs 07 and 16 each keep a CPU core busy, so on a small Docker host you can deploy only the labs you are working on:
+
+```bash
+LABS="01 07" ./scripts/up.sh
+```
+
+`LABS` is also honoured by `./scripts/reset-all.sh`. The Ingress is published on host port 8080; set `INGRESS_PORT` when creating the cluster to use another port.
 
 Then:
 
@@ -49,32 +58,42 @@ less LABS.md
 Validate a repair:
 
 ```bash
-./scripts/check-lab.sh 07
+./scripts/check-lab.sh 07   # or: make check LAB=07
 ```
+
+The checker tests the lab's success condition rather than comparing your manifest with `fixed.yaml`, so any correct repair passes. Most checks start a short-lived `nicolaka/netshoot:v0.16` Pod in the lab namespace to probe the workload; set `CHECK_VERBOSE=1` to print its output.
 
 Reset one lab:
 
 ```bash
-./scripts/reset-lab.sh 07
+./scripts/reset-lab.sh 07   # or: make reset-lab LAB=07
 ```
 
 Apply the reference fix:
 
 ```bash
-./scripts/solve-lab.sh 07
+./scripts/solve-lab.sh 07   # or: make solve LAB=07
 ```
 
-Static validation:
+Static validation (offline; also runs in CI with `shellcheck`):
 
 ```bash
-./scripts/validate.sh
+./scripts/validate.sh       # or: make validate
 ```
 
-Full disposable-cluster reference test:
+Full disposable-cluster reference test (checks fail on every broken lab and pass after every reference fix):
 
 ```bash
-./scripts/e2e-test.sh
+./scripts/e2e-test.sh       # or: make e2e
 ```
+
+Command-level test that runs the `LABS.md` debug commands in a disposable cluster:
+
+```bash
+./scripts/command-e2e-test.sh   # or: make command-e2e
+```
+
+Both tests create their own k3d cluster on a separate host port (8180 and 8280), so they can run while the main dojo is up.
 
 Destroy:
 

@@ -11,29 +11,102 @@ name="$(basename "$lab")"
 ns="$(lab_namespace "$lab")"
 num="${name%%-*}"
 
+# Checks test the lab's success condition (its README), not the exact reference fix, so any
+# correct repair passes. Probes run from a short-lived Netshoot Pod inside the lab namespace.
 pass() { echo "PASS: $name"; exit 0; }
 fail() { echo "NOT FIXED YET: $name"; echo "Hint: $*"; exit 1; }
-jp() { kubectl --context "$DOJO_CONTEXT" -n "$ns" get "$1" -o "jsonpath=$2" 2>/dev/null || true; }
+ready() { wait_rollout "$ns" "$1" || fail "deployment/$1 is not rolled out and ready yet"; }
+
+# The training app lists its live dojo-* fault threads on /stats; an empty list means normal mode.
+fault_threads_stopped() {
+  local deploy="$1" ips ip
+  ready "$deploy"
+  ips="$(pod_ips "$ns" "app=$deploy")"
+  [[ -n "$ips" ]] || return 1
+  for ip in $ips; do
+    probe "$ns" "curl -fsS --max-time 3 http://$ip:8080/stats | grep -qx 'dojoThreads='" || return 1
+  done
+}
 
 case "$num" in
-  01) [[ "$(jp svc/api '{.spec.ports[0].targetPort}')" == "8080" ]] && pass || fail "Service still targets the wrong application port" ;;
-  02) [[ "$(jp deploy/caller '{.spec.template.spec.containers[0].env[0].value}')" == "http://backend:8080/health" ]] && pass || fail "caller still uses the wrong dependency hostname" ;;
-  03) [[ "$(jp deploy/client '{.spec.template.metadata.labels.access}')" == "allowed" ]] && pass || fail "client still lacks the label admitted by NetworkPolicy" ;;
-  04) [[ "$(jp svc/tls-server '{.spec.ports[0].targetPort}')" == "8443" ]] && pass || fail "HTTPS Service still targets the plain HTTP port" ;;
-  05) [[ "$(jp ingress/api '{.spec.rules[0].http.paths[0].backend.service.port.number}')" == "8080" ]] && pass || fail "Ingress still points to the wrong Service port" ;;
-  06) [[ "$(jp svc/iperf-server '{.spec.ports[0].targetPort}')" == "5201" ]] && pass || fail "iperf Service still targets the wrong port" ;;
-  07) [[ "$(jp deploy/api '{.spec.template.spec.containers[0].env[0].value}')" == "normal" ]] && pass || fail "CPU burner is still enabled" ;;
-  08) [[ "$(jp deploy/api '{.spec.template.spec.containers[0].env[0].value}')" == "normal" ]] && pass || fail "deadlock mode is still enabled" ;;
-  09) [[ "$(jp deploy/api '{.spec.template.spec.containers[0].env[0].value}')" == "normal" ]] && pass || fail "memory leak mode is still enabled" ;;
-  10) [[ "$(jp deploy/api '{.spec.template.spec.containers[0].env[0].value}')" == "100" ]] && pass || fail "slowWork delay is still the broken value" ;;
-  11)
-    cmd="$(jp deploy/writer '{.spec.template.spec.initContainers[0].command[2]}')"
-    [[ "$cmd" == *"chown 65532:65532 /data"* && "$cmd" == *"chmod 0770 /data"* ]] && pass || fail "PVC ownership/permissions are not prepared for UID 65532"
+  01)
+    ready api
+    probe "$ns" 'curl -fsS --max-time 3 http://api:8080/health >/dev/null' \
+      && pass || fail "curl http://api:8080/health still fails through the Service"
     ;;
-  12) [[ "$(jp deploy/db-client '{.spec.template.spec.containers[0].env[2].valueFrom.secretKeyRef.name}')" == "postgres-auth" ]] && pass || fail "db-client still uses a bad literal password" ;;
-  13) [[ "$(jp deploy/writer '{.spec.template.spec.containers[0].env[0].value}')" == "normal" ]] && pass || fail "periodic writer is still enabled" ;;
-  14) [[ "$(jp deploy/victim '{.spec.template.spec.containers[0].ports[0].hostPort}')" == "18081" ]] && pass || fail "victim still requests the occupied host port" ;;
-  15) [[ "$(jp deploy/api '{.spec.template.spec.containers[0].env[0].value}')" == "50" ]] && pass || fail "slow endpoint is still at the broken delay" ;;
-  16) [[ "$(jp deploy/api '{.spec.template.spec.containers[0].env[0].value}')" == "normal" ]] && pass || fail "CPU burner is still enabled" ;;
+  02)
+    ready backend; ready caller
+    probe "$ns" 'curl -fsS --max-time 5 http://caller:8080/dependency | grep -q UP' \
+      && pass || fail "caller's /dependency still cannot reach the backend"
+    ;;
+  03)
+    ready backend; ready client
+    probe "$ns" '! nc -z -w 2 backend 8080' 3 \
+      || fail "backend now accepts unlabelled clients; keep the NetworkPolicy and admit the client instead"
+    ips="$(pod_ips "$ns" app=client)"
+    [[ -n "$ips" ]] || fail "client has no running Pod"
+    for ip in $ips; do
+      # NetworkPolicy changes converge asynchronously on K3s, so allow ~30s of retries.
+      probe "$ns" "curl -fsS --max-time 4 http://$ip:8080/dependency | grep -q UP" 15 \
+        || fail "the client workload still cannot reach backend:8080"
+    done
+    pass
+    ;;
+  04)
+    ready tls-server
+    probe "$ns" 'curl -kfsS --max-time 3 https://tls-server/health | grep -q TLS-OK' \
+      && pass || fail "https://tls-server/health does not return TLS-OK"
+    ;;
+  05)
+    ready api
+    # Same Ingress -> Service -> Pod path as the host URL, via the Traefik Service inside the cluster.
+    probe "$ns" 'curl -fsS --max-time 3 http://traefik.kube-system.svc.cluster.local/dojo | grep -q "via Ingress"' 10 \
+      && pass || fail "the /dojo Ingress route still does not reach the api Service"
+    ;;
+  06)
+    ready iperf-server
+    probe "$ns" 'iperf3 -c iperf-server -t 1 >/dev/null' \
+      && pass || fail "iperf3 -c iperf-server still cannot complete a test"
+    ;;
+  07) fault_threads_stopped api && pass || fail "the dojo-cpu-burner thread is still running" ;;
+  08) fault_threads_stopped api && pass || fail "the deadlocked dojo-deadlock-* threads are still present" ;;
+  09) fault_threads_stopped api && pass || fail "the dojo-memory-leak thread is still retaining memory" ;;
+  10)
+    ready api
+    probe "$ns" 'curl -fsS --max-time 1 http://api:8080/slow >/dev/null' \
+      && pass || fail "/slow still takes longer than 1 second"
+    ;;
+  11)
+    ready writer
+    ips="$(pod_ips "$ns" app=writer)"
+    [[ -n "$ips" ]] || fail "writer has no running Pod"
+    for ip in $ips; do
+      probe "$ns" "curl -fsS --max-time 3 http://$ip:8080/write | grep -q wrote" \
+        || fail "the Java writer (UID 65532) still cannot write /data/dojo.txt"
+    done
+    pass
+    ;;
+  12)
+    ready postgres; ready db-client
+    for _ in 1 2 3 4 5; do
+      if kubectl --context "$DOJO_CONTEXT" -n "$ns" exec deploy/db-client -c client -- \
+        sh -c 'PGCONNECT_TIMEOUT=3 psql -h postgres -tAc "select 1"' 2>/dev/null | grep -qx 1; then
+        pass
+      fi
+      sleep 2
+    done
+    fail "db-client still cannot authenticate to PostgreSQL with its configured credentials"
+    ;;
+  13) fault_threads_stopped writer && pass || fail "the periodic dojo-pvc-writer is still running" ;;
+  14)
+    wait_rollout "$ns" port-holder || fail "keep port-holder running; move the victim instead"
+    wait_rollout "$ns" victim && pass || fail "victim still cannot schedule; its host port conflicts with a listener on the node"
+    ;;
+  15)
+    ready api
+    probe "$ns" 'curl -fsS --max-time 0.3 http://api:8080/slow >/dev/null' \
+      && pass || fail "/slow still takes longer than 300 ms"
+    ;;
+  16) fault_threads_stopped api && pass || fail "the dojo-cpu-burner thread is still running" ;;
   *) echo "No checker for $name" >&2; exit 2 ;;
 esac

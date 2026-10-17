@@ -4,9 +4,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/lib.sh"
 require_dojo_context
 
+lab_list="$(selected_labs "$ROOT")"
+mapfile -t labs <<<"$lab_list"
+
 namespaces=()
-for lab in "$ROOT"/labs/*; do
-  [[ -f "$lab/broken.yaml" ]] || continue
+for lab in "${labs[@]}"; do
   ns="$(lab_namespace "$lab")"
   [[ -n "$ns" ]] || { echo "Could not determine namespace for $(basename "$lab")" >&2; exit 1; }
   namespaces+=("$ns")
@@ -24,8 +26,7 @@ while :; do
   sleep 2
 done
 
-for lab in "$ROOT"/labs/*; do
-  [[ -f "$lab/broken.yaml" ]] || continue
+for lab in "${labs[@]}"; do
   kubectl --context "$DOJO_CONTEXT" apply -f "$lab/broken.yaml" >/dev/null
 done
-echo "All labs reset"
+echo "Reset ${#labs[@]} labs"

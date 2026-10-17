@@ -15,6 +15,6 @@ Direct Pod and Service access work, but the path exposed through Traefik does no
 
 ## Success condition
 
-`curl http://localhost:8080/dojo` succeeds from the host.
+`curl http://localhost:8080/dojo` succeeds from the host (or your `INGRESS_PORT`).
 
 Use `../../scripts/check-lab.sh 05` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

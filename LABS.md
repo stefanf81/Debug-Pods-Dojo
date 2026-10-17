@@ -213,7 +213,7 @@ dig +search api
 curl -v http://api:8080/dojo
 ```
 
-From your host:
+From your host (use your `INGRESS_PORT` if you changed it):
 
 ```bash
 curl -v http://localhost:8080/dojo
@@ -427,6 +427,8 @@ Namespace: `dojo-09-java-memory`
 
 Attach early; the lab intentionally keeps allocating.
 
+About ten minutes after each start the heap is exhausted: the JVM writes `/tmp/oome.hprof`, exits, and the kubelet restarts the container (watch the `RESTARTS` column) so the leak starts over. The restart also ends any ephemeral debug container targeting `app`, because it shares that container's PID namespace, so start a new debug session afterwards. To start from a fresh, small heap, run `./scripts/reset-lab.sh 09`.
+
 ```bash
 jcmd <PID> GC.class_histogram
 jstat -gc <PID> 1000
@@ -531,7 +533,7 @@ Attach the storage image and mount the application's existing PVC volume:
 kubectl debug -n dojo-11-storage -it pod/<writer-pod> \
   --container="storage-$(date +%s)" \
   --target=app \
-  --image=tazhate/k8s-debug-container-storage \
+  --image=tazhate/k8s-debug-container-storage@sha256:8e40c1db9d086e4375040984a6ff0362fcfdfd6f8119a812664225f850a2ff28 \
   --profile=general \
   --custom=profiles/storage-data.yaml -- bash
 ```
@@ -580,7 +582,7 @@ Namespace: `dojo-12-db`
 
 ```bash
 kubectl run db-debug -n dojo-12-db --rm -it --restart=Never \
-  --image=tazhate/k8s-debug-container-db -- bash
+  --image=tazhate/k8s-debug-container-db@sha256:3f3e58b3f6e4b3e2a1b3846d7a74ec1a6cb7e3742c57498fa60e145a2f6b3672 -- bash
 ```
 
 Inside:
@@ -614,7 +616,7 @@ Namespace: `dojo-13-perf`
 kubectl debug -n dojo-13-perf -it pod/<writer-pod> \
   --container="perf-$(date +%s)" \
   --target=app \
-  --image=tazhate/k8s-debug-container-perf \
+  --image=tazhate/k8s-debug-container-perf@sha256:a7547e55a0a6a7d0d0cd7bb8ff94143950fdc0794551da3e5718c0add577ebdf \
   --profile=sysadmin -- bash
 ```
 
@@ -698,7 +700,7 @@ Namespace: `dojo-15-stress`
 
 ```bash
 kubectl run stress -n dojo-15-stress --rm -it --restart=Never \
-  --image=tazhate/k8s-debug-container-stress -- bash
+  --image=tazhate/k8s-debug-container-stress@sha256:ed01e0719cc59b3891f9df73c45e2284dcd97530c2b0101698811444b6281d85 -- bash
 ```
 
 HTTP load:
@@ -744,7 +746,7 @@ Start a privileged node debug shell using the gProfiler image:
 
 ```bash
 kubectl debug -it node/<nodename> \
-  --image=intel/gprofiler:latest \
+  --image=intel/gprofiler:1.57.1@sha256:e204c3ad03bf2ee822cb55b6493685926e64d64907c2b83a683d0c49b47a5c6b \
   --profile=sysadmin -- /bin/sh
 ```
 
@@ -796,3 +798,5 @@ You should get a collapsed profile and an HTML flamegraph. The goal is to find t
 ./scripts/reset-lab.sh <number>
 ./scripts/solve-lab.sh <number>
 ```
+
+`check-lab.sh` tests each lab's success condition (for example, that the Service answers or that the fault-injection threads are gone), so any correct repair passes, not only the one in `fixed.yaml`. It starts a short-lived Netshoot probe Pod in the lab namespace; set `CHECK_VERBOSE=1` to see what it ran into.

@@ -4,6 +4,7 @@ metadata:
   name: dojo-04-tls
   labels: {debug-dojo: "true"}
 ---
+# Self-signed certificate and key generated for this lab (CN dojo-tls.local); not a real credential.
 apiVersion: v1
 kind: Secret
 metadata: {name: tls, namespace: dojo-04-tls}
@@ -70,13 +71,13 @@ data:
     http {
       server {
         listen 8080;
-        location /health { return 200 "PLAIN-HTTP\\n"; }
+        location /health { return 200 "PLAIN-HTTP\n"; }
       }
       server {
         listen 8443 ssl;
         ssl_certificate /etc/nginx/tls/tls.crt;
         ssl_certificate_key /etc/nginx/tls/tls.key;
-        location /health { return 200 "TLS-OK\\n"; }
+        location /health { return 200 "TLS-OK\n"; }
       }
     }
 ---
