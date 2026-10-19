@@ -17,4 +17,4 @@ PostgreSQL is reachable and healthy, but the application client cannot authentic
 
 The DB client authenticates with the Secret and its query succeeds.
 
-Use `../../scripts/check-lab.sh 12` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 12` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

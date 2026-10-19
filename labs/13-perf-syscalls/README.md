@@ -18,4 +18,4 @@ The Java process performs periodic filesystem writes. Attach a privileged perfor
 
 The periodic writer is identified and disabled. Kernel-level `perf`/BCC steps are optional if your host blocks them.
 
-Use `../../scripts/check-lab.sh 13` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 13` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

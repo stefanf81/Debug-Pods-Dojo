@@ -17,4 +17,4 @@ A Java workload burns CPU. Profile it from the node rather than attaching Java t
 
 The CPU burner is visible in a system-wide profile and is then disabled. This lab is optional on Docker Desktop/hosts that restrict perf/ptrace features.
 
-Use `../../scripts/check-lab.sh 16` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 16` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

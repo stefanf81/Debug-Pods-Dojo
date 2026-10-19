@@ -10,12 +10,25 @@ lab="$(find_lab "$ROOT" "$num")"
 name="$(basename "$lab")"
 ns="$(lab_namespace "$lab")"
 num="${name%%-*}"
+[[ -n "$ns" ]] || { echo "Could not determine namespace for $name" >&2; exit 2; }
+if ! kubectl --context "$DOJO_CONTEXT" get namespace "$ns" >/dev/null 2>&1; then
+  echo "$name is not deployed (namespace $ns not found). Deploy it with: ./scripts/reset-lab.sh $num" >&2
+  exit 2
+fi
 
 # Checks test the lab's success condition (its README), not the exact reference fix, so any
 # correct repair passes. Probes run from a short-lived Netshoot Pod inside the lab namespace.
+# Exit status: 0 fixed, 1 not fixed yet, 2 the check itself could not run.
 pass() { echo "PASS: $name"; exit 0; }
 fail() { echo "NOT FIXED YET: $name"; echo "Hint: $*"; exit 1; }
 ready() { wait_rollout "$ns" "$1" || fail "deployment/$1 is not rolled out and ready yet"; }
+
+# Probe script: <base-url>/dependency must answer UP from the backend Service. The app echoes its
+# target as "dependency=<url>", so pointing DEPENDENCY_URL at any other endpoint that answers UP fails.
+reaches_backend() {
+  local base="$1" max_time="$2"
+  echo "b=\$(curl -fsS --max-time $max_time $base/dependency) && echo \"\$b\" | grep -q '^dependency=http://backend[.:/]' && echo \"\$b\" | grep -qx UP"
+}
 
 # The training app lists its live dojo-* fault threads on /stats; an empty list means normal mode.
 fault_threads_stopped() {
@@ -36,20 +49,22 @@ case "$num" in
     ;;
   02)
     ready backend; ready caller
-    probe "$ns" 'curl -fsS --max-time 5 http://caller:8080/dependency | grep -q UP' \
-      && pass || fail "caller's /dependency still cannot reach the backend"
+    probe "$ns" "$(reaches_backend http://caller:8080 5)" \
+      && pass || fail "caller's /dependency still does not reach the backend Service"
     ;;
   03)
     ready backend; ready client
-    probe "$ns" '! nc -z -w 2 backend 8080' 3 \
-      || fail "backend now accepts unlabelled clients; keep the NetworkPolicy and admit the client instead"
     ips="$(pod_ips "$ns" app=client)"
     [[ -n "$ips" ]] || fail "client has no running Pod"
     for ip in $ips; do
       # NetworkPolicy changes converge asynchronously on K3s, so allow ~30s of retries.
-      probe "$ns" "curl -fsS --max-time 4 http://$ip:8080/dependency | grep -q UP" 15 \
+      probe "$ns" "$(reaches_backend "http://$ip:8080" 4)" 15 \
         || fail "the client workload still cannot reach backend:8080"
     done
+    # Only now that the dataplane has converged: an unlabelled Pod must be refused on every attempt,
+    # so a deleted or loosened policy cannot pass on a deny rule that has not been removed yet.
+    probe "$ns" 'for i in 1 2 3; do if nc -z -w 2 backend 8080; then exit 1; fi; sleep 1; done' 1 \
+      || fail "backend now accepts unlabelled clients; keep the NetworkPolicy and admit the client instead"
     pass
     ;;
   04)
@@ -88,14 +103,20 @@ case "$num" in
     ;;
   12)
     ready postgres; ready db-client
+    authenticated=""
     for _ in 1 2 3 4 5; do
       if kubectl --context "$DOJO_CONTEXT" -n "$ns" exec deploy/db-client -c client -- \
         sh -c 'PGCONNECT_TIMEOUT=3 psql -h postgres -tAc "select 1"' 2>/dev/null | grep -qx 1; then
-        pass
+        authenticated=1
+        break
       fi
       sleep 2
     done
-    fail "db-client still cannot authenticate to PostgreSQL with its configured credentials"
+    [[ -n "$authenticated" ]] || fail "db-client still cannot authenticate to PostgreSQL with its configured credentials"
+    # The success condition is authenticating "with the Secret", so a password copied into the manifest does not pass.
+    literal="$(kubectl --context "$DOJO_CONTEXT" -n "$ns" get deployment db-client \
+      -o jsonpath='{.spec.template.spec.containers[?(@.name=="client")].env[?(@.name=="PGPASSWORD")].value}' 2>/dev/null || true)"
+    [[ -z "$literal" ]] && pass || fail "db-client authenticates, but PGPASSWORD is a literal value in the manifest; read it from the postgres-auth Secret"
     ;;
   13) fault_threads_stopped writer && pass || fail "the periodic dojo-pvc-writer is still running" ;;
   14)

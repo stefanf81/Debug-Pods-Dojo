@@ -16,6 +16,9 @@ for script in "$ROOT"/scripts/*.sh; do
   [[ "$(basename "$script")" == lib.sh || -x "$script" ]] \
     || die "$script is not executable; run: git update-index --chmod=+x ${script#"$ROOT"/}"
 done
+# macOS ships bash 3.2, which has no mapfile/readarray.
+! grep -nE '^([^#]*[^#[:alnum:]_])?(mapfile|readarray)[[:space:]]' "$ROOT"/scripts/*.sh \
+  || die "Scripts must stay bash 3.2 compatible: read into arrays with a while-read loop instead of mapfile/readarray"
 
 echo "==> Lab structure"
 count=0
@@ -45,6 +48,9 @@ fi
 if command -v kubeconform >/dev/null 2>&1; then
   echo "==> kubeconform schema validation"
   kubeconform -strict -summary "$ROOT"/labs/*/{broken,fixed}.yaml
+else
+  # `kubectl label --local` only catches YAML syntax errors, not misspelled fields or wrong types.
+  echo "==> kubeconform not installed; skipping schema validation (CI installs it)"
 fi
 
 if command -v javac >/dev/null 2>&1; then
@@ -65,7 +71,16 @@ if command -v javac >/dev/null 2>&1; then
       done
       [[ -n "$found" ]] || die "jcmd -l did not report dojo.jar"
       [[ "$found" == "$app_pid" ]] || die "jcmd PID selection chose $found, expected $app_pid"
-      jcmd "$found" Thread.print -l | grep -q dojo-cpu-burner || die "jcmd Thread.print did not show dojo-cpu-burner"
+      # jcmd -l lists the JVM during VM startup, before main() has started the burner thread, so poll the dump too.
+      shown=""
+      for _ in $(seq 1 50); do
+        if jcmd "$found" Thread.print -l >"$tmp/threads.txt" 2>&1 && grep -q dojo-cpu-burner "$tmp/threads.txt"; then
+          shown=1
+          break
+        fi
+        sleep 0.2
+      done
+      [[ -n "$shown" ]] || die "jcmd Thread.print did not show dojo-cpu-burner"
     )
   fi
 else
@@ -119,10 +134,11 @@ for dockerfile in "$ROOT"/images/*/Dockerfile; do
     [[ "$from" == *@sha256:* ]] || die "${dockerfile#"$ROOT"/}: base image is not pinned by digest: $from"
   done < <(awk '$1 == "FROM" {print $2}' "$dockerfile")
 done
-for file in "$LABS_MD" "$CMD_E2E"; do
-  ! grep -Eq 'tazhate/k8s-debug-container-[a-z]+([^@a-z]|$)' "$file" \
-    || die "${file#"$ROOT"/}: tazhate debug images must be pinned by digest"
-  forbid_text "$file" 'gprofiler:latest' "${file#"$ROOT"/}: gProfiler must be pinned to a version and digest"
+# Every third-party debug image in the guide, the test scripts and the check probe must carry a digest.
+debug_images='(nicolaka/netshoot|eclipse-temurin|tazhate/k8s-debug-container-[a-z]+|intel/gprofiler)'
+for file in "$LABS_MD" "$CMD_E2E" "$ROOT/scripts/lib.sh"; do
+  unpinned="$(grep -noE "${debug_images}[^[:space:]\"'\`)]*" "$file" | grep -v '@sha256:[0-9a-f]\{64\}' || true)"
+  [[ -z "$unpinned" ]] || die "${file#"$ROOT"/}: debug images must be pinned by digest: ${unpinned//$'\n'/ }"
 done
 
 echo "==> Arthas debug image guardrails"

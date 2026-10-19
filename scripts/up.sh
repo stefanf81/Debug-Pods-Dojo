@@ -16,11 +16,21 @@ need k3d
 need kubectl
 
 lab_list="$(selected_labs "$ROOT")"
-mapfile -t labs <<<"$lab_list"
+labs=()
+while IFS= read -r lab; do
+  if [[ -n "$lab" ]]; then labs+=("$lab"); fi
+done <<<"$lab_list"
+(( ${#labs[@]} > 0 )) || { echo "No labs selected (LABS='${LABS:-}')" >&2; exit 2; }
 
 wait_deployment() {
-  local namespace="$1" name="$2"
+  local namespace="$1" name="$2" deadline=$((SECONDS + 180))
   echo "    waiting for ${namespace}/deployment/${name}"
+  # K3s creates some packaged components after the cluster reports ready (Traefik comes from a Helm
+  # job), and `rollout status` fails at once for a Deployment that does not exist yet.
+  until kubectl --context "$CONTEXT" -n "$namespace" get deployment "$name" >/dev/null 2>&1; do
+    (( SECONDS < deadline )) || { echo "Timed out waiting for ${namespace}/deployment/${name} to be created" >&2; exit 1; }
+    sleep 2
+  done
   kubectl --context "$CONTEXT" -n "$namespace" rollout status deployment/"$name" --timeout=180s
 }
 
@@ -61,8 +71,9 @@ for lab in "${labs[@]}"; do
   kubectl --context "$CONTEXT" apply -f "$lab/broken.yaml" >/dev/null
 done
 
-# An existing cluster keeps the port it was created with, so report the real mapping.
-ingress_port="$(docker port "k3d-${CLUSTER}-serverlb" 80/tcp 2>/dev/null | head -1 | sed 's/.*://')"
+# An existing cluster keeps the port it was created with, so report the real mapping. Under pipefail a
+# failing `docker port` (no load balancer container) would abort here, so fall back to INGRESS_PORT.
+ingress_port="$(docker port "k3d-${CLUSTER}-serverlb" 80/tcp 2>/dev/null | head -1 | sed 's/.*://' || true)"
 
 cat <<EOF
 

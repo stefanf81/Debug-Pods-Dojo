@@ -17,4 +17,4 @@ The service is functionally correct but slow enough that concurrency amplifies t
 
 Repeated `hey` runs show the repaired `/slow` endpoint completing much faster.
 
-Use `../../scripts/check-lab.sh 15` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 15` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

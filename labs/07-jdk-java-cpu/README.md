@@ -1,6 +1,6 @@
 # Lab 07: Temurin JDK: high CPU + JFR
 
-**Required debug image:** `eclipse-temurin:21-jdk-jammy`
+**Required debug image:** `eclipse-temurin:21.0.12.1_1-jdk-jammy`
 
 ## Goal
 
@@ -19,4 +19,4 @@ The distroless Java process burns CPU. Attach a JDK ephemeral container and iden
 
 The `dojo-cpu-burner` thread is identified and the workload is returned to normal mode.
 
-Use `../../scripts/check-lab.sh 07` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 07` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

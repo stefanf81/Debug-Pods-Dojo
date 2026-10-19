@@ -16,4 +16,4 @@ The backend is healthy and DNS resolves, but the application client cannot conne
 
 The real `client` workload can reach `backend:8080`.
 
-Use `../../scripts/check-lab.sh 03` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 03` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

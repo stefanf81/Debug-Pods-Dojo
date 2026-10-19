@@ -5,7 +5,11 @@ source "$ROOT/scripts/lib.sh"
 require_dojo_context
 
 lab_list="$(selected_labs "$ROOT")"
-mapfile -t labs <<<"$lab_list"
+labs=()
+while IFS= read -r lab; do
+  if [[ -n "$lab" ]]; then labs+=("$lab"); fi
+done <<<"$lab_list"
+(( ${#labs[@]} > 0 )) || { echo "No labs selected (LABS='${LABS:-}')" >&2; exit 2; }
 
 namespaces=()
 for lab in "${labs[@]}"; do

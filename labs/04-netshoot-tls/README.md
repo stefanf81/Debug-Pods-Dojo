@@ -18,4 +18,4 @@ The Service is advertised as HTTPS, but TLS negotiation fails. Determine whether
 
 `curl -k https://tls-server/health` returns `TLS-OK`.
 
-Use `../../scripts/check-lab.sh 04` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 04` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

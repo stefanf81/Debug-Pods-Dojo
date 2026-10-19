@@ -18,4 +18,4 @@ A non-HTTP performance endpoint is unreachable through its Service. Discover the
 
 `iperf3 -c iperf-server` completes successfully.
 
-Use `../../scripts/check-lab.sh 06` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 06` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

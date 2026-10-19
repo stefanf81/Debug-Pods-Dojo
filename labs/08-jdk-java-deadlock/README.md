@@ -1,6 +1,6 @@
 # Lab 08: Temurin JDK / Arthas: Java deadlock
 
-**Required debug image:** `eclipse-temurin:21-jdk-jammy or debug-dojo-arthas-jdk21:local`
+**Required debug image:** `eclipse-temurin:21.0.12.1_1-jdk-jammy or debug-dojo-arthas-jdk21:local`
 
 ## Goal
 
@@ -16,4 +16,4 @@ The HTTP process is alive but two background threads are deadlocked. Prove the d
 
 The deliberate deadlock is identified and the deployment is returned to normal mode.
 
-Use `../../scripts/check-lab.sh 08` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 08` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

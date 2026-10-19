@@ -2,6 +2,8 @@
 
 Do not open `fixed.yaml` or `ANSWERS.md` until you want the reference repair.
 
+Run the commands from the repository root: the `profiles/` files passed to `--custom` and the `./scripts/` paths are relative to it.
+
 ## Common debug patterns
 
 ### Ephemeral container in an existing Pod
@@ -35,6 +37,12 @@ kubectl debug -it node/<nodename> \
 
 The node filesystem is available under `/host`.
 
+The node debug Pod stays behind after you exit (as `node-debugger-<node>-<suffix>` in the current namespace), and lab resets do not remove it. Delete it when you are done:
+
+```bash
+kubectl get pods -o name | grep node-debugger- | xargs kubectl delete
+```
+
 ---
 
 ## Lab 01 — Netshoot: Service/TCP path
@@ -45,7 +53,7 @@ Start with an independent client:
 
 ```bash
 kubectl run netshoot -n dojo-01-service --rm -it --restart=Never \
-  --image=nicolaka/netshoot:v0.16 -- zsh
+  --image=nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70 -- zsh
 ```
 
 Practice:
@@ -69,7 +77,7 @@ Then attach Netshoot to the app Pod:
 kubectl debug -n dojo-01-service -it pod/<podname> \
   --container="netshoot-$(date +%s)" \
   --target=app \
-  --image=nicolaka/netshoot:v0.16 \
+  --image=nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70 \
   --profile=netadmin -- zsh
 ```
 
@@ -96,7 +104,7 @@ Attach Netshoot to the caller Pod:
 kubectl debug -n dojo-02-dns -it pod/<caller-pod> \
   --container="netshoot-$(date +%s)" \
   --target=app \
-  --image=nicolaka/netshoot:v0.16 \
+  --image=nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70 \
   --profile=general -- zsh
 ```
 
@@ -136,7 +144,7 @@ Try an unlabelled client:
 
 ```bash
 kubectl run netshoot-denied -n dojo-03-netpol --rm -it --restart=Never \
-  --image=nicolaka/netshoot:v0.16 -- zsh
+  --image=nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70 -- zsh
 ```
 
 Inside:
@@ -152,7 +160,7 @@ Now create a labelled debug client:
 ```bash
 kubectl run netshoot-allowed -n dojo-03-netpol --rm -it --restart=Never \
   --labels=access=allowed \
-  --image=nicolaka/netshoot:v0.16 -- zsh
+  --image=nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70 -- zsh
 ```
 
 Repeat the same tests. The contrast is the point of the lab.
@@ -167,7 +175,7 @@ Namespace: `dojo-04-tls`
 
 ```bash
 kubectl run netshoot -n dojo-04-tls --rm -it --restart=Never \
-  --image=nicolaka/netshoot:v0.16 -- zsh
+  --image=nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70 -- zsh
 ```
 
 Inside:
@@ -203,7 +211,7 @@ From a debug Pod:
 
 ```bash
 kubectl run netshoot -n dojo-05-ingress --rm -it --restart=Never \
-  --image=nicolaka/netshoot:v0.16 -- zsh
+  --image=nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70 -- zsh
 ```
 
 Test the Service:
@@ -237,7 +245,7 @@ Run Netshoot:
 
 ```bash
 kubectl run netshoot -n dojo-06-throughput --rm -it --restart=Never \
-  --image=nicolaka/netshoot:v0.16 -- zsh
+  --image=nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70 -- zsh
 ```
 
 Inside:
@@ -257,7 +265,7 @@ For packet capture, attach another Netshoot ephemeral container to the iperf ser
 kubectl debug -n dojo-06-throughput -it pod/<iperf-server-pod> \
   --container="capture-$(date +%s)" \
   --target=server \
-  --image=nicolaka/netshoot:v0.16 \
+  --image=nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70 \
   --profile=netadmin -- zsh
 ```
 
@@ -298,7 +306,7 @@ The Java image is distroless. The debugger is injected rather than installed in 
 kubectl debug -n <namespace> -it pod/<podname> \
   --container="jdk-$(date +%s)" \
   --target=app \
-  --image=eclipse-temurin:21-jdk-jammy \
+  --image=eclipse-temurin:21.0.12.1_1-jdk-jammy@sha256:742daacb9316be4b6fc60258f6e4ac2a11882f6c597373c92290a57bfad0d2e0 \
   --profile=general \
   --custom=profiles/java-attach.yaml -- bash
 ```
@@ -517,7 +525,7 @@ Generate traffic in another terminal:
 
 ```bash
 kubectl run load -n dojo-10-arthas-slow --rm -it --restart=Never \
-  --image=nicolaka/netshoot:v0.16 -- \
+  --image=nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70 -- \
   sh -c 'for i in 1 2 3 4 5; do curl -s http://api:8080/slow; done'
 ```
 
@@ -664,7 +672,7 @@ Enter it:
 
 ```bash
 kubectl debug -it node/<nodename> \
-  --image=nicolaka/netshoot:v0.16 \
+  --image=nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70 \
   --profile=sysadmin -- zsh
 ```
 

@@ -11,7 +11,7 @@ This edition intentionally removes generic Kubernetes exercises that are better 
 | Debug image | Labs | Main capabilities exercised |
 |---|---:|---|
 | `nicolaka/netshoot:v0.16` | 01–06, 14 | DNS, HTTP/TCP, routing, sockets, NetworkPolicy, TLS, nmap, tcpdump, iperf3, node namespaces |
-| `eclipse-temurin:21-jdk-jammy` | 07–09 | jcmd, jstat, thread dumps, heap histograms/dumps, NMT, JFR |
+| `eclipse-temurin:21.0.12.1_1-jdk-jammy` | 07–09 | jcmd, jstat, thread dumps, heap histograms/dumps, NMT, JFR |
 | `debug-dojo-arthas-jdk21:local` | 08, 10 | dashboard, threads, decompile, trace, watch, stack, profiler |
 | `tazhate/k8s-debug-container-storage` | 11 | mounts, disk usage, iostat, fio |
 | `tazhate/k8s-debug-container-db` | 12 | pg_isready, psql, DB connectivity/auth |
@@ -19,7 +19,7 @@ This edition intentionally removes generic Kubernetes exercises that are better 
 | `tazhate/k8s-debug-container-stress` | 15 | hey, stress-ng, sysbench, controlled load |
 | `intel/gprofiler:1.57.1` | 16 | system-wide CPU profiles and local flamegraphs |
 
-Third-party and privileged debug images are pinned by digest in `LABS.md` and the test scripts, and the image build bases are pinned in the Dockerfiles. `./scripts/validate.sh` rejects unpinned references.
+Third-party debug images, including the checker's probe image, are pinned by digest in `LABS.md`, the test scripts and `scripts/lib.sh` (the tables show their tags), and the image build bases are pinned in the Dockerfiles. `./scripts/validate.sh` rejects unpinned debug-image references.
 
 
 ## Prerequisites
@@ -27,6 +27,7 @@ Third-party and privileged debug images are pinned by digest in `LABS.md` and th
 - Docker
 - k3d 5.x
 - kubectl
+- bash 3.2 or newer (the macOS default works)
 - About 6 GB of Docker memory is comfortable
 
 ## Start
@@ -61,7 +62,7 @@ Validate a repair:
 ./scripts/check-lab.sh 07   # or: make check LAB=07
 ```
 
-The checker tests the lab's success condition rather than comparing your manifest with `fixed.yaml`, so any correct repair passes. Most checks start a short-lived `nicolaka/netshoot:v0.16` Pod in the lab namespace to probe the workload; set `CHECK_VERBOSE=1` to print its output.
+The checker tests the lab's success condition rather than comparing your manifest with `fixed.yaml`, so any correct repair passes. Most checks start a short-lived, digest-pinned `nicolaka/netshoot:v0.16` Pod in the lab namespace to probe the workload; set `CHECK_VERBOSE=1` to print its output. If that probe Pod cannot run (for example, its image cannot be pulled), the checker reports a check error and exits with status 2 instead of calling the lab not fixed.
 
 Reset one lab:
 
@@ -93,7 +94,7 @@ Command-level test that runs the `LABS.md` debug commands in a disposable cluste
 ./scripts/command-e2e-test.sh   # or: make command-e2e
 ```
 
-Both tests create their own k3d cluster on a separate host port (8180 and 8280), so they can run while the main dojo is up.
+Both tests create their own k3d cluster on a separate host port (8180 and 8280) with a private kubeconfig, so they can run while the main dojo is up without touching it or your current kubectl context. They ignore `CLUSTER` and `INGRESS_PORT`; set `E2E_CLUSTER` or `E2E_INGRESS_PORT` to override the test cluster's name or port, and `KEEP_CLUSTER=1` to keep it afterwards.
 
 Destroy:
 

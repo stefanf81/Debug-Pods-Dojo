@@ -2,22 +2,29 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export CLUSTER="${CLUSTER:-debug-pods-dojo-command-e2e}"
+# The dojo scripts read CLUSTER and INGRESS_PORT, so take the test's values from E2E_* variables
+# instead of inheriting what a learner exported for the main dojo (this script deletes $CLUSTER).
+export CLUSTER="${E2E_CLUSTER:-debug-pods-dojo-command-e2e}"
 # Use a separate host port so the test can run while the main dojo cluster is up.
-export INGRESS_PORT="${INGRESS_PORT:-8280}"
+export INGRESS_PORT="${E2E_INGRESS_PORT:-8280}"
 unset LABS
 CONTEXT="k3d-${CLUSTER}"
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
-ORIGINAL_CONTEXT=""
+# A private kubeconfig keeps cluster creation and `use-context` away from the learner's current context.
+E2E_KUBECONFIG_DIR="$(mktemp -d)"
+export KUBECONFIG="$E2E_KUBECONFIG_DIR/config"
 PASS=0
 SKIP=0
+# Third-party debug images, pinned by digest to the same references as LABS.md.
+NETSHOOT_IMAGE="nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70"
+JDK_IMAGE="eclipse-temurin:21.0.12.1_1-jdk-jammy@sha256:742daacb9316be4b6fc60258f6e4ac2a11882f6c597373c92290a57bfad0d2e0"
 
 cleanup() {
-  if [[ "$KEEP_CLUSTER" != "1" ]]; then
+  if [[ "$KEEP_CLUSTER" == "1" ]]; then
+    echo "Kept cluster $CLUSTER; use it with: export KUBECONFIG=$KUBECONFIG"
+  else
     k3d cluster delete "$CLUSTER" >/dev/null 2>&1 || true
-  fi
-  if [[ -n "$ORIGINAL_CONTEXT" ]] && kubectl config get-contexts "$ORIGINAL_CONTEXT" >/dev/null 2>&1; then
-    kubectl config use-context "$ORIGINAL_CONTEXT" >/dev/null 2>&1 || true
+    rm -rf "$E2E_KUBECONFIG_DIR"
   fi
 }
 trap cleanup EXIT
@@ -117,7 +124,6 @@ run_node_debug() {
   k debug "node/$node" --image="$image" --profile=sysadmin --attach=true -- sh -lc "$command"
 }
 
-ORIGINAL_CONTEXT="$(kubectl config current-context 2>/dev/null || true)"
 k3d cluster delete "$CLUSTER" >/dev/null 2>&1 || true
 "$ROOT/scripts/up.sh"
 
@@ -126,12 +132,12 @@ echo "==> Command-level validation of LABS.md"
 # 01 - Netshoot Service/TCP and same-Pod network context
 wait_deploy dojo-01-service api
 api_ip="$(pod_ip_for dojo-01-service app=api)"
-if run_pod dojo-01-service cmd01 nicolaka/netshoot:v0.16 \
+if run_pod dojo-01-service cmd01 "$NETSHOOT_IMAGE" \
   "set -e; echo '[01] DNS short-name via search list'; dig +search +short api | grep -q .; echo '[01] direct Pod IP must work'; curl -fsS http://$api_ip:8080/health >/dev/null; echo '[01] broken Service must fail'; if curl --connect-timeout 2 -fsS http://api:8080/health; then echo 'broken Service unexpectedly worked'; exit 1; fi; echo '[01] broken Service TCP check must fail'; if nc -vz -w 2 api 8080; then echo 'broken Service TCP unexpectedly worked'; exit 1; fi; echo '[01] expected contrast observed'"; then
   pass "01 Netshoot DNS + direct Pod + broken Service path"
 else fail "01 throwaway Netshoot commands"; fi
 p="$(pod_for dojo-01-service app=api)"
-if run_ephemeral dojo-01-service "$p" app cmd01attach nicolaka/netshoot:v0.16 netadmin zsh \
+if run_ephemeral dojo-01-service "$p" app cmd01attach "$NETSHOOT_IMAGE" netadmin zsh \
   'set -e; command -v ss; command -v ip; ss -lntp | grep -q 8080; ip addr >/dev/null; ip route >/dev/null; curl -fsS http://127.0.0.1:8080/health >/dev/null'; then
   pass "01 Netshoot ephemeral container + ss/ip/localhost curl"
 else fail "01 Netshoot ephemeral attach"; fi
@@ -140,14 +146,14 @@ else fail "01 Netshoot ephemeral attach"; fi
 wait_deploy dojo-02-dns backend
 wait_deploy dojo-02-dns caller
 p="$(pod_for dojo-02-dns app=caller)"
-if run_ephemeral dojo-02-dns "$p" app cmd02 nicolaka/netshoot:v0.16 general zsh \
+if run_ephemeral dojo-02-dns "$p" app cmd02 "$NETSHOOT_IMAGE" general zsh \
   'set -e; cat /etc/resolv.conf >/dev/null; dig +search +short backend | grep -q .; dig +short backend.dojo-02-dns.svc.cluster.local | grep -q .; drill backend.dojo-02-dns.svc.cluster.local >/dev/null; nslookup backend >/dev/null; test -z "$(dig +search +short backned)"; curl -fsS http://backend:8080/health >/dev/null; if curl --connect-timeout 2 -fsS http://backned:8080/health; then exit 1; fi'; then
   pass "02 Netshoot dig/drill/nslookup and DNS typo diagnosis"
 else fail "02 DNS command set"; fi
 
 # 03 - NetworkPolicy: denied vs explicitly allowed debug client
 wait_deploy dojo-03-netpol backend
-if run_pod dojo-03-netpol cmd03deny nicolaka/netshoot:v0.16 \
+if run_pod dojo-03-netpol cmd03deny "$NETSHOOT_IMAGE" \
   'set -e; dig +search +short backend | grep -q .; if nc -vz -w 3 backend 8080; then exit 1; fi; if curl --connect-timeout 3 -fsS http://backend:8080/health; then exit 1; fi'; then
   pass "03 Netshoot denied NetworkPolicy client"
 else fail "03 denied NetworkPolicy commands"; fi
@@ -155,7 +161,7 @@ else fail "03 denied NetworkPolicy commands"; fi
 # reconciled asynchronously, so a newly-created labelled Pod may not be admitted by
 # the dataplane at the exact instant its container starts.
 k -n dojo-03-netpol delete pod cmd03allow --ignore-not-found --wait=false >/dev/null 2>&1 || true
-k -n dojo-03-netpol run cmd03allow --restart=Never --image=nicolaka/netshoot:v0.16 \
+k -n dojo-03-netpol run cmd03allow --restart=Never --image="$NETSHOOT_IMAGE" \
   --labels=access=allowed --command -- sleep 120 >/dev/null
 k -n dojo-03-netpol wait --for=condition=Ready pod/cmd03allow --timeout=120s >/dev/null
 [[ "$(k -n dojo-03-netpol get pod cmd03allow -o jsonpath='{.metadata.labels.access}')" == "allowed" ]] \
@@ -185,14 +191,14 @@ fi
 # 04 - TLS/protocol tooling
 wait_deploy dojo-04-tls tls-server
 tls_ip="$(pod_ip_for dojo-04-tls app=tls-server)"
-if run_pod dojo-04-tls cmd04 nicolaka/netshoot:v0.16 \
+if run_pod dojo-04-tls cmd04 "$NETSHOOT_IMAGE" \
   "set -e; command -v openssl; command -v nmap; nc -vz tls-server 443; if printf '\\n' | openssl s_client -connect tls-server:443 -servername dojo-tls.local >/tmp/bad-tls 2>&1; then exit 1; fi; if curl --connect-timeout 3 -kfsS https://tls-server/health; then exit 1; fi; nmap -p 8080,8443 $tls_ip | tee /tmp/nmap.out; grep -Eq '^8080/tcp[[:space:]]+open' /tmp/nmap.out; grep -Eq '^8443/tcp[[:space:]]+open' /tmp/nmap.out; curl -fsS http://$tls_ip:8080/health >/dev/null; curl -kfsS https://$tls_ip:8443/health >/dev/null"; then
   pass "04 Netshoot nc/openssl/curl/nmap TLS diagnosis"
 else fail "04 TLS commands"; fi
 
 # 05 - Ingress isolation: Service succeeds while the intentionally bad Ingress fails
 wait_deploy dojo-05-ingress api
-if run_pod dojo-05-ingress cmd05 nicolaka/netshoot:v0.16 \
+if run_pod dojo-05-ingress cmd05 "$NETSHOOT_IMAGE" \
   'set -e; dig +search +short api | grep -q .; curl -fsS http://api:8080/dojo >/dev/null'; then
   pass "05 Netshoot backend/Service before Ingress"
 else fail "05 Service path commands"; fi
@@ -205,12 +211,12 @@ fi
 # 06 - Netshoot advanced tools + real packet-capture privilege
 wait_deploy dojo-06-throughput iperf-server
 iperf_ip="$(pod_ip_for dojo-06-throughput app=iperf-server)"
-if run_pod dojo-06-throughput cmd06 nicolaka/netshoot:v0.16 \
+if run_pod dojo-06-throughput cmd06 "$NETSHOOT_IMAGE" \
   "set -e; for x in nmap iperf3 mtr tcptraceroute termshark ngrep tshark tcpdump; do command -v \"\$x\"; done; nmap -sT -p 5201 $iperf_ip | tee /tmp/nmap.out; grep -Eq '^5201/tcp[[:space:]]+open' /tmp/nmap.out; iperf3 -c $iperf_ip -t 1 >/dev/null; mtr -rw -c 1 $iperf_ip >/dev/null; tcptraceroute $iperf_ip 5201 >/dev/null 2>&1 || true; termshark --version >/dev/null"; then
   pass "06 Netshoot nmap/iperf3/mtr/tcptraceroute/termshark surface"
 else fail "06 Netshoot advanced client commands"; fi
 p="$(pod_for dojo-06-throughput app=iperf-server)"
-if run_ephemeral dojo-06-throughput "$p" server cmd06cap nicolaka/netshoot:v0.16 netadmin zsh \
+if run_ephemeral dojo-06-throughput "$p" server cmd06cap "$NETSHOOT_IMAGE" netadmin zsh \
   'set -e; ss -lntp | grep -q 5201; tcpdump -i lo -nn -c 1 icmp >/tmp/tcpdump.out 2>&1 & t=$!; sleep 1; ping -c 1 127.0.0.1 >/dev/null; wait $t; grep -q ICMP /tmp/tcpdump.out; tshark -D >/dev/null; ngrep -V >/dev/null 2>&1'; then
   pass "06 Netshoot netadmin packet-capture privilege + tcpdump/tshark/ngrep"
 else fail "06 packet capture commands/privileges"; fi
@@ -218,7 +224,7 @@ else fail "06 packet capture commands/privileges"; fi
 # 07 - JDK attach, thread tools, NMT and a short JFR
 wait_deploy dojo-07-java-cpu api
 p="$(pod_for dojo-07-java-cpu app=api)"
-if run_ephemeral dojo-07-java-cpu "$p" app cmd07 eclipse-temurin:21-jdk-jammy general bash \
+if run_ephemeral dojo-07-java-cpu "$p" app cmd07 "$JDK_IMAGE" general bash \
   'set -e; pid=$(jcmd -l | grep dojo.jar | cut -d" " -f1); test -n "$pid"; jps -lv | grep -q dojo.jar; jcmd "$pid" VM.version >/dev/null; jcmd "$pid" VM.flags >/dev/null; jcmd "$pid" VM.native_memory summary | grep -q Native; jcmd "$pid" Thread.print -l | grep -q dojo-cpu-burner; jstack "$pid" >/dev/null; jmap -histo "$pid" >/tmp/jmap.histo; test -s /tmp/jmap.histo; jinfo -flags "$pid" >/dev/null; jstat -gc "$pid" 1000 1 >/dev/null; jcmd "$pid" JFR.start name=commandcheck settings=profile duration=3s filename=/tmp/commandcheck.jfr >/dev/null; sleep 4; test -s /tmp/commandcheck.jfr' \
   "$ROOT/profiles/java-attach.yaml"; then
   pass "07 Temurin jcmd/jps/jstack/jmap/jinfo/jstat/JFR/NMT attach"
@@ -227,7 +233,7 @@ else fail "07 Java diagnostic commands"; fi
 # 08 - JDK deadlock + Arthas batch attach (same underlying boot jar used interactively in LABS.md)
 wait_deploy dojo-08-java-deadlock api
 p="$(pod_for dojo-08-java-deadlock app=api)"
-if run_ephemeral dojo-08-java-deadlock "$p" app cmd08jdk eclipse-temurin:21-jdk-jammy general bash \
+if run_ephemeral dojo-08-java-deadlock "$p" app cmd08jdk "$JDK_IMAGE" general bash \
   'set -e; pid=$(jcmd -l | grep dojo.jar | cut -d" " -f1); jcmd "$pid" Thread.print -l >/tmp/threads; grep -q dojo-deadlock-A /tmp/threads; grep -q dojo-deadlock-B /tmp/threads; grep -qi deadlock /tmp/threads' \
   "$ROOT/profiles/java-attach.yaml"; then
   pass "08 JDK deadlock detection"
@@ -243,7 +249,7 @@ else fail "08 Arthas deadlock commands"; fi
 "$ROOT/scripts/reset-lab.sh" 09 >/dev/null
 wait_deploy dojo-09-java-memory api
 p="$(pod_for dojo-09-java-memory app=api)"
-if run_ephemeral dojo-09-java-memory "$p" app cmd09 eclipse-temurin:21-jdk-jammy general bash \
+if run_ephemeral dojo-09-java-memory "$p" app cmd09 "$JDK_IMAGE" general bash \
   'set -e; pid=$(jcmd -l | grep dojo.jar | cut -d" " -f1); jcmd "$pid" GC.class_histogram >/tmp/histo; grep -Fq "[B" /tmp/histo; jstat -gc "$pid" 1000 1 >/dev/null; jcmd "$pid" VM.native_memory summary >/dev/null; jcmd "$pid" GC.heap_dump /tmp/commandcheck.hprof >/dev/null; test -s /tmp/commandcheck.hprof; rm -f /tmp/commandcheck.hprof' \
   "$ROOT/profiles/java-attach.yaml"; then
   pass "09 heap histogram/GC/NMT/heap dump"
@@ -252,7 +258,7 @@ else fail "09 memory diagnostic commands"; fi
 # 10 - Arthas live application inspection. Batch mode validates command parsing/attach; traffic-sensitive commands stay learner-interactive.
 wait_deploy dojo-10-arthas-slow api
 p="$(pod_for dojo-10-arthas-slow app=api)"
-if run_pod dojo-10-arthas-slow cmd10load nicolaka/netshoot:v0.16 \
+if run_pod dojo-10-arthas-slow cmd10load "$NETSHOOT_IMAGE" \
   'set -e; for i in 1 2 3 4 5; do curl -fsS http://api:8080/slow >/dev/null; done'; then :; else fail "10 load generator"; fi
 if run_ephemeral dojo-10-arthas-slow "$p" app cmd10arthas debug-dojo-arthas-jdk21:local general /bin/sh \
   'set -e; java -version; rm -rf /tmp/arthas-shared; mkdir -p /tmp/arthas-shared; cp -R /opt/arthas/. /tmp/arthas-shared/; test -f /tmp/arthas-shared/arthas-boot.jar; test -f /tmp/arthas-shared/arthas-agent.jar; mkdir -p /tmp/arthas-agent-check; cd /tmp/arthas-agent-check; jar xf /tmp/arthas-shared/arthas-agent.jar META-INF/MANIFEST.MF; grep -q "^Agent-Class:" META-INF/MANIFEST.MF; cd /tmp; pid=$(jps -l | grep dojo.jar | cut -d" " -f1); test -n "$pid"; if ! java -jar /tmp/arthas-shared/arthas-boot.jar -c "version; dashboard -n 1; jvm; memory; thread -n 10; classloader; sc dojo.DojoApp; sm dojo.DojoApp; jad dojo.DojoApp; logger" "$pid" >/tmp/arthas.out 2>&1; then cat /tmp/arthas.out; exit 1; fi; cat /tmp/arthas.out; grep -q DojoApp /tmp/arthas.out' \
@@ -289,7 +295,7 @@ else fail "13 performance commands/ptrace privilege"; fi
 # 14 - kubectl debug node + host namespace tooling
 wait_deploy dojo-14-node port-holder
 node="$(k -n dojo-14-node get pod -l app=port-holder -o jsonpath='{.items[0].spec.nodeName}')"
-if out="$(run_node_debug "$node" nicolaka/netshoot:v0.16 'set -e; ss -lntp | grep 18080; ip addr >/dev/null; ip route >/dev/null; ip neigh >/dev/null; ps aux >/dev/null; test -d /host; iptables -S >/dev/null 2>&1 || true; nft list ruleset >/dev/null 2>&1 || true; conntrack -L >/dev/null 2>&1 || true; ipvsadm -Ln >/dev/null 2>&1 || true; echo NODE_DEBUG_OK' 2>&1)" && grep -q NODE_DEBUG_OK <<<"$out"; then
+if out="$(run_node_debug "$node" "$NETSHOOT_IMAGE" 'set -e; ss -lntp | grep 18080; ip addr >/dev/null; ip route >/dev/null; ip neigh >/dev/null; ps aux >/dev/null; test -d /host; iptables -S >/dev/null 2>&1 || true; nft list ruleset >/dev/null 2>&1 || true; conntrack -L >/dev/null 2>&1 || true; ipvsadm -Ln >/dev/null 2>&1 || true; echo NODE_DEBUG_OK' 2>&1)" && grep -q NODE_DEBUG_OK <<<"$out"; then
   pass "14 node debug host namespaces + /host + firewall/service-routing tools"
 else
   printf '%s\n' "${out:-}" >&2

@@ -17,4 +17,4 @@ The distroless app cannot write its mounted PVC. Mount the same volume into a st
 
 The Java writer can create `/data/dojo.txt`.
 
-Use `../../scripts/check-lab.sh 11` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 11` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

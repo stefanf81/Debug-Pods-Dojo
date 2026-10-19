@@ -17,4 +17,4 @@ A workload cannot schedule because a required host port is already occupied on t
 
 The victim runs on a non-conflicting host port.
 
-Use `../../scripts/check-lab.sh 14` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 14` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

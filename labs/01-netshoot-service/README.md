@@ -17,4 +17,4 @@ The application Pod is healthy, but the Service does not work. Use Netshoot to p
 
 `curl http://api:8080/health` succeeds through the Service.
 
-Use `../../scripts/check-lab.sh 01` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
+From the repository root, run `./scripts/check-lab.sh 01` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.
