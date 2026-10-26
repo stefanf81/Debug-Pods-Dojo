@@ -40,7 +40,7 @@ The node filesystem is available under `/host`.
 The node debug Pod stays behind after you exit (as `node-debugger-<node>-<suffix>` in the current namespace), and lab resets do not remove it. Delete it when you are done:
 
 ```bash
-kubectl get pods -o name | grep node-debugger- | xargs kubectl delete
+kubectl get pods -o name | grep node-debugger- | while read -r pod; do kubectl delete "$pod"; done
 ```
 
 ---

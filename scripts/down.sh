@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-CLUSTER="${CLUSTER:-debug-pods-dojo}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT/scripts/lib.sh"
 k3d cluster delete "$CLUSTER"

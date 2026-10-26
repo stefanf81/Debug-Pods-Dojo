@@ -19,7 +19,7 @@ This edition intentionally removes generic Kubernetes exercises that are better 
 | `tazhate/k8s-debug-container-stress` | 15 | hey, stress-ng, sysbench, controlled load |
 | `intel/gprofiler:1.57.1` | 16 | system-wide CPU profiles and local flamegraphs |
 
-Third-party debug images, including the checker's probe image, are pinned by digest in `LABS.md`, the test scripts and `scripts/lib.sh` (the tables show their tags), and the image build bases are pinned in the Dockerfiles. `./scripts/validate.sh` rejects unpinned debug-image references.
+Third-party debug images, including the checker's probe image, are pinned by digest in `LABS.md`, the lab manifests, the test scripts and `scripts/lib.sh` (the tables show their tags), and the image build bases are pinned in the Dockerfiles. `./scripts/validate.sh` rejects unpinned debug-image references.
 
 
 ## Prerequisites
@@ -111,6 +111,8 @@ The Java attach labs share `/tmp` with the ephemeral debugger and use `profiles/
 Storage Lab 11 uses `profiles/storage-data.yaml` to mount the application's existing `data` volume into the storage debug container.
 
 ## Reference documentation
+
+- `kubernetes-debug-pods-cheat-sheet-1.pdf`: a general debug-image cheat sheet. It is background reading only: its examples use a different app (`taskflow`) and unpinned image tags, so use the digest-pinned commands in `LABS.md` for the labs.
 
 - Kubernetes `kubectl debug`: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_debug/
 - Ephemeral containers: https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/

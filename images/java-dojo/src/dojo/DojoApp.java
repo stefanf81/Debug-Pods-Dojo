@@ -1,6 +1,7 @@
 package dojo;
 
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
@@ -37,20 +38,8 @@ public final class DojoApp {
         String mode = env("DOJO_MODE", "normal").toLowerCase(Locale.ROOT);
         int port = Integer.parseInt(env("PORT", "8080"));
 
-        if (Boolean.parseBoolean(env("REQUIRE_STARTUP_CONFIG", "false"))
-                && !"present".equals(env("STARTUP_REQUIRED", ""))) {
-            System.err.println("FATAL: STARTUP_REQUIRED is missing or incorrect; expected value 'present'");
-            System.exit(42);
-        }
-
         System.out.printf("[%s] debug-dojo starting pod=%s mode=%s port=%d pid=%d%n",
                 Instant.now(), pod, mode, port, ProcessHandle.current().pid());
-
-        long startupDelayMs = Long.parseLong(env("STARTUP_DELAY_MS", "0"));
-        if (startupDelayMs > 0) {
-            System.out.printf("Delaying HTTP startup for %d ms%n", startupDelayMs);
-            sleep(startupDelayMs);
-        }
 
         if (mode.contains("cpu")) startCpuBurner();
         if (mode.contains("deadlock")) startDeadlock();
@@ -59,18 +48,17 @@ public final class DojoApp {
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
-        server.createContext("/health", ex -> text(ex, 200, "UP\n"));
-        server.createContext("/ready", ex -> text(ex, 200, "READY\n"));
-        server.createContext("/slow", DojoApp::slowHandler);
-        server.createContext("/dependency", DojoApp::dependencyHandler);
-        server.createContext("/write", DojoApp::writeHandler);
-        server.createContext("/stats", ex -> text(ex, 200,
+        route(server, "/health", ex -> text(ex, 200, "UP\n"));
+        route(server, "/slow", DojoApp::slowHandler);
+        route(server, "/dependency", DojoApp::dependencyHandler);
+        route(server, "/write", DojoApp::writeHandler);
+        route(server, "/stats", ex -> text(ex, 200,
                 "pid=" + ProcessHandle.current().pid() + "\n" +
                 "mode=" + mode + "\n" +
                 "leakChunks=" + LEAK.size() + "\n" +
                 "cpuCounter=" + CPU_COUNTER.get() + "\n" +
                 "dojoThreads=" + dojoThreads() + "\n"));
-        server.createContext("/dojo", ex -> text(ex, 200,
+        route(server, "/dojo", ex -> text(ex, 200,
                 "Kubernetes Debug Dojo via Ingress\n" +
                 "pod=" + pod + "\n" +
                 "mode=" + mode + "\n"));
@@ -83,10 +71,22 @@ public final class DojoApp {
                     "Kubernetes Debug Dojo\n" +
                     "pod=" + pod + "\n" +
                     "mode=" + mode + "\n" +
-                    "paths=/health /ready /slow /dependency /write /stats /dojo\n");
+                    "paths=/health /slow /dependency /write /stats /dojo\n");
         });
         server.start();
         System.out.println("HTTP server started");
+    }
+
+    // HttpServer contexts match by prefix (/healthz would hit /health); serve only the exact path.
+    private static void route(HttpServer server, String path, HttpHandler handler) {
+        server.createContext(path, ex -> {
+            String requested = ex.getRequestURI().getPath();
+            if (path.equals(requested) || (path + "/").equals(requested)) {
+                handler.handle(ex);
+            } else {
+                text(ex, 404, "NOT FOUND\n");
+            }
+        });
     }
 
     private static void startCpuBurner() {
@@ -226,7 +226,9 @@ public final class DojoApp {
         try {
             Thread.sleep(millis);
         } catch (InterruptedException e) {
+            // Keep the flag and stop the caller; swallowing it would turn every later sleep into a busy loop.
             Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted", e);
         }
     }
 }

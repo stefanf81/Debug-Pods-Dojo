@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/lib.sh"
 echo "==> Debug Pods Dojo"
-BUILD_IMAGE="${IMAGE:-debug-dojo-java:local}"
+BUILD_IMAGE="${DOJO_JAVA_IMAGE:-debug-dojo-java:local}"
 LAB_IMAGE="debug-dojo-java:local"
 ARTHAS_IMAGE="debug-dojo-arthas-jdk21:local"
 CONTEXT="$DOJO_CONTEXT"
@@ -43,7 +43,7 @@ fi
 echo "==> Building Java 21 Arthas debug image"
 docker build -t "$ARTHAS_IMAGE" "$ROOT/images/arthas-jdk21"
 
-if k3d cluster list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qx "$CLUSTER"; then
+if k3d cluster get "$CLUSTER" >/dev/null 2>&1; then
   echo "==> k3d cluster '$CLUSTER' already exists"
 else
   echo "==> Creating 1-server + 2-agent k3d cluster (Ingress on host port $INGRESS_PORT)"

@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: server
-          image: nicolaka/netshoot:v0.16
+          image: nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70
           command: ["iperf3","-s"]
           ports: [{containerPort: 5201}]
 ---

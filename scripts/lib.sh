@@ -85,6 +85,8 @@ probe() {
     echo "CHECK ERROR: could not create the probe Pod in namespace $ns" >&2
     exit 2
   fi
+  # Do not leave the probe Pod behind if the check is interrupted.
+  trap "kubectl --context '$DOJO_CONTEXT' -n '$ns' delete pod '$name' --wait=false >/dev/null 2>&1; exit 130" INT TERM
   for _ in $(seq 1 $((CHECK_TIMEOUT + attempts * 8))); do
     phase="$("${k[@]}" get pod "$name" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
     [[ "$phase" == "Succeeded" || "$phase" == "Failed" ]] && break
@@ -99,5 +101,6 @@ probe() {
   fi
   [[ -n "${CHECK_VERBOSE:-}" ]] && "${k[@]}" logs "$name" >&2 2>/dev/null
   "${k[@]}" delete pod "$name" --wait=false >/dev/null 2>&1 || true
+  trap - INT TERM
   [[ "$phase" == "Succeeded" ]]
 }

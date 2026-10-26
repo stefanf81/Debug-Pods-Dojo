@@ -47,7 +47,7 @@ else
 fi
 if command -v kubeconform >/dev/null 2>&1; then
   echo "==> kubeconform schema validation"
-  kubeconform -strict -summary "$ROOT"/labs/*/{broken,fixed}.yaml
+  kubeconform -strict -summary -kubernetes-version "${KUBERNETES_VERSION:-1.31.0}" "$ROOT"/labs/*/{broken,fixed}.yaml
 else
   # `kubectl label --local` only catches YAML syntax errors, not misspelled fields or wrong types.
   echo "==> kubeconform not installed; skipping schema validation (CI installs it)"
@@ -136,7 +136,7 @@ for dockerfile in "$ROOT"/images/*/Dockerfile; do
 done
 # Every third-party debug image in the guide, the test scripts and the check probe must carry a digest.
 debug_images='(nicolaka/netshoot|eclipse-temurin|tazhate/k8s-debug-container-[a-z]+|intel/gprofiler)'
-for file in "$LABS_MD" "$CMD_E2E" "$ROOT/scripts/lib.sh"; do
+for file in "$LABS_MD" "$CMD_E2E" "$ROOT/scripts/lib.sh" "$ROOT"/labs/*/*.yaml; do
   unpinned="$(grep -noE "${debug_images}[^[:space:]\"'\`)]*" "$file" | grep -v '@sha256:[0-9a-f]\{64\}' || true)"
   [[ -z "$unpinned" ]] || die "${file#"$ROOT"/}: debug images must be pinned by digest: ${unpinned//$'\n'/ }"
 done

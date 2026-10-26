@@ -4,7 +4,7 @@
 
 ## Goal
 
-The service is functionally correct but slow enough that concurrency amplifies the problem. Use the stress/debug image to reproduce the symptom consistently and quantify the difference after the repair.
+The service is functionally correct but every `/slow` request takes about half a second. Use the stress/debug image to reproduce the symptom consistently under concurrent load and quantify the latency difference after the repair.
 
 ## What to practice
 
