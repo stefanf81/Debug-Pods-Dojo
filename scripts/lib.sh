@@ -85,7 +85,9 @@ probe() {
     echo "CHECK ERROR: could not create the probe Pod in namespace $ns" >&2
     exit 2
   fi
-  # Do not leave the probe Pod behind if the check is interrupted.
+  # Do not leave the probe Pod behind if the check is interrupted. The trap expands now on purpose:
+  # ns and name are locals and would be out of scope when the signal arrives.
+  # shellcheck disable=SC2064
   trap "kubectl --context '$DOJO_CONTEXT' -n '$ns' delete pod '$name' --wait=false >/dev/null 2>&1; exit 130" INT TERM
   for _ in $(seq 1 $((CHECK_TIMEOUT + attempts * 8))); do
     phase="$("${k[@]}" get pod "$name" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
