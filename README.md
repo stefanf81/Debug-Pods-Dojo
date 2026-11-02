@@ -62,6 +62,14 @@ Validate a repair:
 ./scripts/check-lab.sh 07   # or: make check LAB=07
 ```
 
+Check every deployed lab at once:
+
+```bash
+./scripts/check-all.sh      # or: make check-all
+```
+
+It runs four checks in parallel (`CHECK_JOBS=8` to change that), prints one result per lab in order, and exits 0 when everything passes, 1 when a lab is not fixed yet and 2 when a check could not run.
+
 The checker tests the lab's success condition rather than comparing your manifest with `fixed.yaml`, so any correct repair passes. Most checks start a short-lived, digest-pinned `nicolaka/netshoot:v0.16` Pod in the lab namespace to probe the workload; set `CHECK_VERBOSE=1` to print its output. If that probe Pod cannot run (for example, its image cannot be pulled), the checker reports a check error and exits with status 2 instead of calling the lab not fixed.
 
 Reset one lab:
@@ -94,13 +102,17 @@ Command-level test that runs the `LABS.md` debug commands in a disposable cluste
 ./scripts/command-e2e-test.sh   # or: make command-e2e
 ```
 
-Both tests create their own k3d cluster on a separate host port (8180 and 8280) with a private kubeconfig, so they can run while the main dojo is up without touching it or your current kubectl context. They ignore `CLUSTER` and `INGRESS_PORT`; set `E2E_CLUSTER` or `E2E_INGRESS_PORT` to override the test cluster's name or port, and `KEEP_CLUSTER=1` to keep it afterwards.
+Both tests create their own k3d cluster on a separate host port (8180 and 8280) with a private kubeconfig, so they can run while the main dojo is up without touching it or your current kubectl context. They ignore `CLUSTER` and `INGRESS_PORT`; set `E2E_CLUSTER` or `E2E_INGRESS_PORT` to override the test cluster's name or port, and `KEEP_CLUSTER=1` to keep it afterwards. `E2E_LABS="01 07"` limits `e2e-test.sh` to a subset of labs for a faster smoke test. GitHub Actions runs both suites nightly and on demand through the `e2e` workflow.
+
+If Docker reports `too many open files` while the second cluster starts (Docker Desktop has limited inotify watchers), stop the main dojo first with `k3d cluster stop debug-pods-dojo` and start it again afterwards.
 
 Destroy:
 
 ```bash
 ./scripts/down.sh
 ```
+
+`up.sh` switches the active kubectl context to the dojo and records the previously active one; `down.sh` restores that context after deleting the cluster (unless you switched away yourself in the meantime).
 
 ## Design
 

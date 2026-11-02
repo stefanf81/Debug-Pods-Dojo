@@ -1,4 +1,4 @@
-.PHONY: up down status reset reset-lab check solve validate lint e2e command-e2e
+.PHONY: up down status reset reset-lab check check-all solve validate lint e2e command-e2e
 up:
 	./scripts/up.sh
 down:
@@ -13,6 +13,8 @@ reset-lab:
 check:
 	@test -n "$(LAB)" || (echo "Usage: make check LAB=07" && exit 2)
 	./scripts/check-lab.sh "$(LAB)"
+check-all:
+	./scripts/check-all.sh
 solve:
 	@test -n "$(LAB)" || (echo "Usage: make solve LAB=07" && exit 2)
 	./scripts/solve-lab.sh "$(LAB)"

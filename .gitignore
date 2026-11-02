@@ -1,0 +1,7 @@
+.DS_Store
+
+# Diagnostic artifacts copied out of debug containers (see LABS.md).
+*.jfr
+*.hprof
+*.col
+*flamegraph*.html

@@ -106,3 +106,61 @@ probe() {
   trap - INT TERM
   [[ "$phase" == "Succeeded" ]]
 }
+
+# --- kubectl context handover -------------------------------------------------
+# up.sh switches the user's kubectl context to the disposable cluster. Save the context that was
+# active before the switch so down.sh can restore it. The state file is keyed by cluster name so
+# side-by-side dojos (the E2E clusters, or two clusters created with different CLUSTER values) do
+# not overwrite each other.
+context_state_file() {
+  printf '%s/debug-pods-dojo/%s.previous-context\n' \
+    "${XDG_STATE_HOME:-$HOME/.local/state}" "$CLUSTER"
+}
+
+remember_previous_context() {
+  local current file
+  current="$(kubectl config current-context 2>/dev/null || true)"
+  # Re-running up.sh while the dojo is already current must not overwrite the saved context.
+  [[ -n "$current" && "$current" != "$DOJO_CONTEXT" ]] || return 0
+  file="$(context_state_file)"
+  mkdir -p "$(dirname "$file")" 2>/dev/null || return 0
+  printf '%s\n' "$current" >"$file" 2>/dev/null || true
+}
+
+context_exists() {
+  kubectl config get-contexts "$1" >/dev/null 2>&1
+}
+
+restore_previous_context() {
+  local current file previous
+  file="$(context_state_file)"
+  [[ -f "$file" ]] || return 0
+  previous="$(head -n 1 "$file" 2>/dev/null || true)"
+  current="$(kubectl config current-context 2>/dev/null || true)"
+  if [[ -z "$previous" ]]; then
+    rm -f "$file"
+    return 0
+  fi
+  # Never override a deliberate switch: only take the context back while the dojo still owns it
+  # (or while nothing is current, which is what deleting the cluster's context leaves behind).
+  if [[ -n "$current" && "$current" != "$DOJO_CONTEXT" ]]; then
+    rm -f "$file"
+    return 0
+  fi
+  if ! context_exists "$previous"; then
+    echo "Previous kubectl context '$previous' no longer exists; leaving the current context unchanged." >&2
+    rm -f "$file"
+    return 0
+  fi
+  # Keep the saved state until the switch has actually worked, so a failure can be retried.
+  if kubectl config use-context "$previous" >/dev/null; then
+    rm -f "$file"
+    echo "Restored kubectl context: $previous"
+  else
+    echo "Could not switch back to '$previous'; run: kubectl config use-context $previous" >&2
+  fi
+}
+
+forget_previous_context() {
+  rm -f "$(context_state_file)" 2>/dev/null || true
+}

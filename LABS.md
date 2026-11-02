@@ -803,8 +803,10 @@ You should get a collapsed profile and an HTML flamegraph. The goal is to find t
 
 ```bash
 ./scripts/check-lab.sh <number>
+./scripts/check-all.sh
 ./scripts/reset-lab.sh <number>
 ./scripts/solve-lab.sh <number>
 ```
 
+`check-all.sh` reports the state of every deployed lab in one table.
 `check-lab.sh` tests each lab's success condition (for example, that the Service answers or that the fault-injection threads are gone), so any correct repair passes, not only the one in `fixed.yaml`. It starts a short-lived Netshoot probe Pod in the lab namespace; set `CHECK_VERBOSE=1` to see what it ran into.

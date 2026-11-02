@@ -13,6 +13,7 @@ KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 # A private kubeconfig keeps cluster creation and `use-context` away from the learner's current context.
 E2E_KUBECONFIG_DIR="$(mktemp -d)"
 export KUBECONFIG="$E2E_KUBECONFIG_DIR/config"
+source "$ROOT/scripts/lib.sh"
 PASS=0
 SKIP=0
 # Third-party debug images, pinned by digest to the same references as LABS.md.
@@ -20,6 +21,7 @@ NETSHOOT_IMAGE="nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266d
 JDK_IMAGE="eclipse-temurin:21.0.12.1_1-jdk-jammy@sha256:742daacb9316be4b6fc60258f6e4ac2a11882f6c597373c92290a57bfad0d2e0"
 
 cleanup() {
+  forget_previous_context
   if [[ "$KEEP_CLUSTER" == "1" ]]; then
     echo "Kept cluster $CLUSTER; use it with: export KUBECONFIG=$KUBECONFIG"
   else

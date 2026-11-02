@@ -1,0 +1,59 @@
+name: e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      labs:
+        description: "Space-separated lab prefixes for the checker E2E (empty = all labs)"
+        required: false
+        default: ""
+  schedule:
+    # Nightly: the static validation cannot catch a broken checker, a stale repair or a
+    # debug image that no longer works.
+    - cron: "17 3 * * *"
+  pull_request:
+    # Smoke test only: changes to what the labs run on get a fast end-to-end signal.
+    paths:
+      - "labs/**"
+      - "scripts/**"
+      - "images/**"
+      - "profiles/**"
+      - ".github/workflows/e2e.yml"
+      - ".github/actions/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Lab 01 (Service), 03 (NetworkPolicy) and 12 (Secret + database) cover the cluster plumbing
+  # without the CPU-heavy Java labs.
+  SMOKE_LABS: "01 03 12"
+
+jobs:
+  checker-e2e:
+    name: Checker reference-state E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-k3d
+      - name: Run checker E2E
+        env:
+          E2E_LABS: ${{ github.event_name == 'pull_request' && env.SMOKE_LABS || github.event.inputs.labs }}
+        run: ./scripts/e2e-test.sh
+
+  command-e2e:
+    name: LABS.md command E2E
+    # The full command suite takes long and needs privileged debug images, so it is not a PR gate.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-k3d
+      - name: Run command E2E
+        run: ./scripts/command-e2e-test.sh

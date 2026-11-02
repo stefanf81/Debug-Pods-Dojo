@@ -6,13 +6,30 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export CLUSTER="${E2E_CLUSTER:-debug-pods-dojo-e2e}"
 # Use a separate host port so the test can run while the main dojo cluster is up.
 export INGRESS_PORT="${E2E_INGRESS_PORT:-8180}"
-unset LABS
+# Run every lab by default. E2E_LABS limits the suite to a subset for a faster smoke test:
+#   E2E_LABS="01 07" ./scripts/e2e-test.sh
+if [[ -n "${E2E_LABS:-}" ]]; then
+  export LABS="$E2E_LABS"
+else
+  unset LABS
+fi
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 # A private kubeconfig keeps cluster creation and `use-context` away from the learner's current context.
 E2E_KUBECONFIG_DIR="$(mktemp -d)"
 export KUBECONFIG="$E2E_KUBECONFIG_DIR/config"
+source "$ROOT/scripts/lib.sh"
+
+# Capture first: a failure inside a here-string substitution is ignored, so a typo such as
+# E2E_LABS="01 99" would silently run fewer labs instead of stopping.
+lab_list="$(selected_labs "$ROOT")" || { echo "Invalid lab selection (E2E_LABS='${E2E_LABS:-}')" >&2; exit 2; }
+labs=()
+while IFS= read -r lab; do
+  [[ -n "$lab" ]] && labs+=("$lab")
+done <<<"$lab_list"
+(( ${#labs[@]} > 0 )) || { echo "No labs selected (E2E_LABS='${E2E_LABS:-}')" >&2; exit 2; }
 
 cleanup() {
+  forget_previous_context
   if [[ "$KEEP_CLUSTER" == "1" ]]; then
     echo "Kept cluster $CLUSTER; use it with: export KUBECONFIG=$KUBECONFIG"
   else
@@ -31,7 +48,7 @@ k3d cluster delete "$CLUSTER" >/dev/null 2>&1 || true
 
 # check-lab.sh exits 1 for "not fixed yet" and 2 when the check itself could not run.
 echo "==> Broken-state reference checks"
-for lab in "$ROOT"/labs/*; do
+for lab in "${labs[@]}"; do
   number="$(basename "$lab")"; number="${number%%-*}"
   rc=0
   out="$("$ROOT/scripts/check-lab.sh" "$number" 2>&1)" || rc=$?
@@ -43,11 +60,11 @@ for lab in "$ROOT"/labs/*; do
 done
 
 echo "==> Reference repair checks"
-for lab in "$ROOT"/labs/*; do
+for lab in "${labs[@]}"; do
   number="$(basename "$lab")"; number="${number%%-*}"
   "$ROOT/scripts/solve-lab.sh" "$number" >/dev/null
   out="$("$ROOT/scripts/check-lab.sh" "$number" 2>&1)" \
     || { printf '%s\n' "$out" >&2; echo "Reference repair did not pass: $(basename "$lab")" >&2; exit 1; }
 done
 
-echo "E2E reference-state test: PASS"
+echo "E2E reference-state test: PASS (${#labs[@]} labs)"

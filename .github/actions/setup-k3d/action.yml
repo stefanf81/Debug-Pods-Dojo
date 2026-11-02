@@ -1,0 +1,25 @@
+name: Set up k3d
+description: Install a checksum-verified k3d release.
+
+inputs:
+  version:
+    description: k3d release tag
+    default: v5.9.0
+  sha256:
+    description: SHA-256 of the linux-amd64 binary for that release
+    default: 06d8f25bc3a971c4eb29e0ff08429b180402db0f4dec838c9eac427e296800a0
+
+runs:
+  using: composite
+  steps:
+    - name: Install k3d
+      shell: bash
+      env:
+        K3D_VERSION: ${{ inputs.version }}
+        K3D_SHA256: ${{ inputs.sha256 }}
+      run: |
+        curl -fsSL -o /tmp/k3d \
+          "https://github.com/k3d-io/k3d/releases/download/${K3D_VERSION}/k3d-linux-amd64"
+        echo "${K3D_SHA256}  /tmp/k3d" | sha256sum -c -
+        sudo install -m 0755 /tmp/k3d /usr/local/bin/k3d
+        k3d version
