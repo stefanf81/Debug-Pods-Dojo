@@ -81,7 +81,7 @@ else
 fi
 
 echo "==> Importing local Java and Arthas debug images"
-k3d image import -c "$CLUSTER" "$LAB_IMAGE" "$ARTHAS_IMAGE"
+import_local_images
 
 # Optional: load the third-party images into the nodes now instead of pulling them on first use.
 #   PRELOAD=runtime  only the images the lab workloads and the checker probe run

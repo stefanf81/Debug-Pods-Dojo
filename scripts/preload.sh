@@ -28,12 +28,19 @@ command -v k3d >/dev/null 2>&1 || { echo "Missing required command: k3d" >&2; ex
 k3d cluster get "$CLUSTER" >/dev/null 2>&1 \
   || { echo "k3d cluster '$CLUSTER' does not exist; run ./scripts/up.sh first." >&2; exit 1; }
 
+# Only Docker's containerd image store keeps the multi-platform index that a digest-pinned reference
+# names. The classic store would give the nodes a single-platform copy under a different digest that
+# kubelet never matches, so there is nothing useful to preload.
+if [[ "$(docker info --format '{{json .DriverStatus}}' 2>/dev/null)" != *io.containerd.snapshotter* ]]; then
+  echo "Docker is not using the containerd image store, so digest-pinned images cannot be preloaded;"
+  echo "they will be pulled on first use. (Docker Desktop / Rancher Desktop enable the store in settings.)"
+  exit 0
+fi
+
 nodes=()
-for role in server agent; do
-  while IFS= read -r node; do
-    [[ -n "$node" ]] && nodes+=("$node")
-  done <<<"$(docker ps --filter "label=k3d.cluster=$CLUSTER" --filter "label=k3d.role=$role" --format '{{.Names}}')"
-done
+while IFS= read -r node; do
+  [[ -n "$node" ]] && nodes+=("$node")
+done <<<"$(k3d_node_containers)"
 (( ${#nodes[@]} > 0 )) || { echo "No running k3d nodes found for '$CLUSTER'." >&2; exit 1; }
 
 tmp="$(mktemp -d)"

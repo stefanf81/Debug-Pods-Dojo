@@ -17,7 +17,7 @@ k3d cluster get "$CLUSTER" >/dev/null 2>&1 \
 build_local_images "$ROOT"
 
 echo "==> Importing local Java and Arthas debug images"
-k3d image import -c "$CLUSTER" "$LAB_IMAGE" "$ARTHAS_IMAGE"
+import_local_images
 
 echo "==> Restarting lab Deployments that run $LAB_IMAGE"
 restarted=()

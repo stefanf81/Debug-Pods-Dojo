@@ -132,6 +132,46 @@ probe() {
   [[ "$phase" == "Succeeded" ]]
 }
 
+# --- loading images into the k3d nodes ----------------------------------------
+# Running k3d node containers of $CLUSTER, one per line (servers first).
+k3d_node_containers() {
+  local role
+  for role in server agent; do
+    docker ps --filter "label=k3d.cluster=$CLUSTER" --filter "label=k3d.role=$role" --format '{{.Names}}'
+  done
+}
+
+# True when the node's containerd knows the image under its normalised name.
+node_has_image() {
+  docker exec "$1" ctr -n k8s.io images ls -q 2>/dev/null | grep -xF -- "docker.io/library/$2" >/dev/null
+}
+
+# Import the locally built images into every node and prove it worked. `k3d image import` can print
+# "Successfully imported" and exit 0 while the nodes failed to read its tarball (seen on CI runners);
+# the Java labs then never start because the local image cannot be pulled. So check each node and
+# fall back to loading the image with Docker directly.
+import_local_images() {
+  local image node tarball tmp
+  k3d image import -c "$CLUSTER" "$LAB_IMAGE" "$ARTHAS_IMAGE" || true
+  tmp="$(mktemp -d)"
+  for image in "$LAB_IMAGE" "$ARTHAS_IMAGE"; do
+    while IFS= read -r node; do
+      [[ -n "$node" ]] || continue
+      node_has_image "$node" "$image" && continue
+      echo "    $node is missing $image after k3d image import; loading it with docker save"
+      tarball="$tmp/image.tar"
+      docker save "$image" -o "$tarball"
+      docker cp "$tarball" "$node:/tmp/local-image.tar"
+      docker exec "$node" ctr -n k8s.io images import /tmp/local-image.tar >/dev/null
+      docker exec "$node" rm -f /tmp/local-image.tar >/dev/null 2>&1 || true
+      rm -f "$tarball"
+      node_has_image "$node" "$image" \
+        || { rm -rf "$tmp"; echo "Could not load $image into $node." >&2; return 1; }
+    done <<<"$(k3d_node_containers)"
+  done
+  rm -rf "$tmp"
+}
+
 # --- kubectl context handover -------------------------------------------------
 # up.sh switches the user's kubectl context to the disposable cluster. Save the context that was
 # active before the switch so down.sh can restore it. The state file is keyed by cluster name so

@@ -29,6 +29,8 @@ Images are otherwise pulled on first use. To load them into the cluster up front
 PRELOAD=runtime ./scripts/up.sh    # preload while creating the cluster
 ```
 
+Preloading needs Docker's containerd image store; with the classic store the script says so and skips, and images are pulled on first use. Either way `up.sh` verifies that the locally built Java and Arthas images arrived on every node and loads them with `docker save` when `k3d image import` silently did not.
+
 
 ## Prerequisites
 
