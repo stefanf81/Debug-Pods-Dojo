@@ -19,7 +19,15 @@ This edition intentionally removes generic Kubernetes exercises that are better 
 | `tazhate/k8s-debug-container-stress` | 15 | hey, stress-ng, sysbench, controlled load |
 | `intel/gprofiler:1.57.1` | 16 | system-wide CPU profiles and local flamegraphs |
 
-Third-party debug images, including the checker's probe image, are pinned by digest in `LABS.md`, the lab manifests, the test scripts and `scripts/lib.sh` (the tables show their tags), and the image build bases are pinned in the Dockerfiles. `./scripts/validate.sh` rejects unpinned debug-image references.
+Every third-party image (debug images, the checker's probe image and the images the lab workloads run) is pinned by digest. `scripts/images.env` is the single source of truth; `LABS.md`, the lab manifests, the test scripts and the Dockerfiles must reference exactly those values (the tables here show tags only). `./scripts/validate.sh` fails on any unpinned or drifting reference.
+
+Images are otherwise pulled on first use. To load them into the cluster up front (offline-friendly, no registry waits mid-exercise):
+
+```bash
+./scripts/preload.sh               # or: make preload   (workload + debug images, about 3 GB)
+./scripts/preload.sh --runtime     # or: make preload SCOPE=runtime
+PRELOAD=runtime ./scripts/up.sh    # preload while creating the cluster
+```
 
 
 ## Prerequisites

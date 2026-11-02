@@ -16,9 +16,7 @@ export KUBECONFIG="$E2E_KUBECONFIG_DIR/config"
 source "$ROOT/scripts/lib.sh"
 PASS=0
 SKIP=0
-# Third-party debug images, pinned by digest to the same references as LABS.md.
-NETSHOOT_IMAGE="nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70"
-JDK_IMAGE="eclipse-temurin:21.0.12.1_1-jdk-jammy@sha256:742daacb9316be4b6fc60258f6e4ac2a11882f6c597373c92290a57bfad0d2e0"
+# Third-party image references (digest-pinned) come from scripts/images.env via lib.sh.
 
 cleanup() {
   forget_previous_context
@@ -271,7 +269,7 @@ else fail "10 Arthas core command set"; fi
 # 11 - Storage image + custom volumeMount profile
 wait_deploy dojo-11-storage writer
 p="$(pod_for dojo-11-storage app=writer)"
-if run_ephemeral dojo-11-storage "$p" app cmd11 tazhate/k8s-debug-container-storage@sha256:8e40c1db9d086e4375040984a6ff0362fcfdfd6f8119a812664225f850a2ff28 general bash \
+if run_ephemeral dojo-11-storage "$p" app cmd11 "$STORAGE_IMAGE" general bash \
   'set -e; id; test -d /data; grep " /data " /proc/mounts >/dev/null || grep "/data" /proc/self/mountinfo >/dev/null; df -h /data >/dev/null; du -sh /data >/dev/null; command -v ncdu; command -v iostat; iostat -xz 1 1 >/dev/null; dd if=/dev/zero of=/data/fio-commandcheck.tmp bs=1M count=8 status=none; fio --name=dojo-read --filename=/data/fio-commandcheck.tmp --size=8M --rw=read --bs=4k --runtime=2 --time_based >/dev/null; rm -f /data/fio-commandcheck.tmp' \
   "$ROOT/profiles/storage-data.yaml"; then
   pass "11 storage PVC mount + df/du/ncdu/iostat/dd/fio"
@@ -281,7 +279,7 @@ else fail "11 storage commands/custom volume mount"; fi
 wait_deploy dojo-12-db postgres
 pw="$(k -n dojo-12-db get secret postgres-auth -o jsonpath='{.data.password}' | base64 -d)"
 pwq="$(printf '%q' "$pw")"
-if run_pod dojo-12-db cmd12 tazhate/k8s-debug-container-db@sha256:3f3e58b3f6e4b3e2a1b3846d7a74ec1a6cb7e3742c57498fa60e145a2f6b3672 \
+if run_pod dojo-12-db cmd12 "$DB_IMAGE" \
   "set -e; pg_isready -h postgres -p 5432; if PGPASSWORD=wrong-password psql -h postgres -U dojo -d dojo -c 'select 1;' >/dev/null 2>&1; then exit 1; fi; PGPASSWORD=$pwq psql -h postgres -U dojo -d dojo -c 'select current_database(), current_user;' | grep -q dojo"; then
   pass "12 pg_isready/psql bad-auth vs good-auth"
 else fail "12 database commands"; fi
@@ -289,7 +287,7 @@ else fail "12 database commands"; fi
 # 13 - Process/strace and perf presence; real perf sampling is host-dependent and not a hard failure.
 wait_deploy dojo-13-perf writer
 p="$(pod_for dojo-13-perf app=writer)"
-if run_ephemeral dojo-13-perf "$p" app cmd13 tazhate/k8s-debug-container-perf@sha256:a7547e55a0a6a7d0d0cd7bb8ff94143950fdc0794551da3e5718c0add577ebdf sysadmin bash \
+if run_ephemeral dojo-13-perf "$p" app cmd13 "$PERF_IMAGE" sysadmin bash \
   'set -e; ps aux >/dev/null; htop --version >/dev/null; pid=$(ps -eo pid=,comm= | sed -n "/[[:space:]]java$/{s/^[[:space:]]*//;s/[[:space:]].*//;p;q;}"); test -n "$pid"; test -d "/proc/$pid/fd"; strace -f -p "$pid" -e trace=openat,write,close -o /tmp/strace.out & s=$!; sleep 7; kill -INT "$s" 2>/dev/null || true; wait "$s" 2>/dev/null || true; test -s /tmp/strace.out; perf --version >/dev/null' ; then
   pass "13 sysadmin process view + htop/strace/perf binary"
 else fail "13 performance commands/ptrace privilege"; fi
@@ -306,7 +304,7 @@ fi
 
 # 15 - Stress image controlled workloads only inside disposable Pod
 wait_deploy dojo-15-stress api
-if run_pod dojo-15-stress cmd15 tazhate/k8s-debug-container-stress@sha256:ed01e0719cc59b3891f9df73c45e2284dcd97530c2b0101698811444b6281d85 \
+if run_pod dojo-15-stress cmd15 "$STRESS_IMAGE" \
   'set -e; hey -n 10 -c 2 http://api:8080/slow >/dev/null; stress-ng --cpu 1 --timeout 2s --metrics >/dev/null; sysbench cpu --threads=1 --time=1 run >/dev/null; ioping -c 2 /tmp >/dev/null; fio --name=dojo-scratch --filename=/tmp/fio-dojo.tmp --size=8M --rw=randrw --bs=4k --runtime=2 --time_based >/dev/null; rm -f /tmp/fio-dojo.tmp'; then
   pass "15 hey/stress-ng/sysbench/ioping/fio"
 else fail "15 stress/load commands"; fi
@@ -320,12 +318,12 @@ else fail "15 kubectl top command after metrics warm-up"; fi
 wait_deploy dojo-16-gprofiler api
 node="$(k -n dojo-16-gprofiler get pod -l app=api -o jsonpath='{.items[0].spec.nodeName}')"
 gprof_cmd='set -e; mkdir -p /host/tmp/gprofiler-commandcheck; /gprofiler --profiling-duration 5 --output-dir /host/tmp/gprofiler-commandcheck --disable-metrics-collection --disable-metadata-collection; test -e /host/tmp/gprofiler-commandcheck/last_profile.col; test -e /host/tmp/gprofiler-commandcheck/last_flamegraph.html; echo GPROFILER_OK'
-if out="$(run_node_debug "$node" intel/gprofiler:1.57.1@sha256:e204c3ad03bf2ee822cb55b6493685926e64d64907c2b83a683d0c49b47a5c6b "$gprof_cmd" 2>&1)" && grep -q GPROFILER_OK <<<"$out"; then
+if out="$(run_node_debug "$node" "$GPROFILER_IMAGE" "$gprof_cmd" 2>&1)" && grep -q GPROFILER_OK <<<"$out"; then
   pass "16 gProfiler system-wide profile + local outputs"
 else
   echo "    normal gProfiler mode unavailable; trying documented runtime-only fallback"
   fallback='set -e; mkdir -p /host/tmp/gprofiler-commandcheck; /gprofiler --profiling-duration 5 --output-dir /host/tmp/gprofiler-commandcheck --disable-pidns-check --perf-mode disabled --disable-metrics-collection --disable-metadata-collection; test -e /host/tmp/gprofiler-commandcheck/last_profile.col; echo GPROFILER_RUNTIME_OK'
-  if out="$(run_node_debug "$node" intel/gprofiler:1.57.1@sha256:e204c3ad03bf2ee822cb55b6493685926e64d64907c2b83a683d0c49b47a5c6b "$fallback" 2>&1)" && grep -q GPROFILER_RUNTIME_OK <<<"$out"; then
+  if out="$(run_node_debug "$node" "$GPROFILER_IMAGE" "$fallback" 2>&1)" && grep -q GPROFILER_RUNTIME_OK <<<"$out"; then
     pass "16 gProfiler runtime-only fallback"
   else
     printf '%s\n' "${out:-}" >&2

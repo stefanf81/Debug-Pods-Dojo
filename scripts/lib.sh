@@ -2,7 +2,9 @@
 # Keep these scripts runnable on bash 3.2 (the macOS default): no mapfile/readarray, no associative arrays.
 CLUSTER="${CLUSTER:-debug-pods-dojo}"
 DOJO_CONTEXT="k3d-${CLUSTER}"
-PROBE_IMAGE="${PROBE_IMAGE:-nicolaka/netshoot:v0.16@sha256:b09d9b21381f47a79b3cbcb30da25266dc17186ea00ae65e99fdc51396f48e70}"
+# shellcheck source=scripts/images.env
+source "$(dirname "${BASH_SOURCE[0]}")/images.env"
+PROBE_IMAGE="${PROBE_IMAGE:-$NETSHOOT_IMAGE}"
 CHECK_TIMEOUT="${CHECK_TIMEOUT:-90}"
 
 require_dojo_context() {

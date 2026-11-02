@@ -43,6 +43,7 @@ jobs:
       - uses: ./.github/actions/setup-k3d
       - name: Run checker E2E
         env:
+          PRELOAD: runtime
           E2E_LABS: ${{ github.event_name == 'pull_request' && env.SMOKE_LABS || github.event.inputs.labs }}
         run: ./scripts/e2e-test.sh
 
@@ -56,4 +57,6 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-k3d
       - name: Run command E2E
+        env:
+          PRELOAD: all
         run: ./scripts/command-e2e-test.sh

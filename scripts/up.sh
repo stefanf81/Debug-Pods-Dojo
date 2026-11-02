@@ -92,6 +92,16 @@ fi
 echo "==> Importing local Java and Arthas debug images"
 k3d image import -c "$CLUSTER" "$LAB_IMAGE" "$ARTHAS_IMAGE"
 
+# Optional: load the third-party images into the nodes now instead of pulling them on first use.
+#   PRELOAD=runtime  only the images the lab workloads and the checker probe run
+#   PRELOAD=all      also every debug image used by LABS.md (about 3 GB)
+case "${PRELOAD:-}" in
+  ""|0|no) ;;
+  runtime) "$ROOT/scripts/preload.sh" --runtime ;;
+  all|1|yes) "$ROOT/scripts/preload.sh" --all ;;
+  *) echo "Unknown PRELOAD='${PRELOAD}' (use runtime or all)" >&2; exit 2 ;;
+esac
+
 if ! context_exists "$CONTEXT"; then
   echo "==> Restoring missing kubeconfig context for '$CLUSTER'"
   k3d kubeconfig merge "$CLUSTER" --kubeconfig-merge-default --kubeconfig-switch-context >/dev/null

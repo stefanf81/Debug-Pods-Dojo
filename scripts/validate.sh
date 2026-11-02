@@ -47,7 +47,8 @@ else
 fi
 if command -v kubeconform >/dev/null 2>&1; then
   echo "==> kubeconform schema validation"
-  kubeconform -strict -summary -kubernetes-version "${KUBERNETES_VERSION:-1.31.0}" "$ROOT"/labs/*/{broken,fixed}.yaml
+  # Default matches the K3s release that k3d 5.9 starts; override with KUBERNETES_VERSION=x.y.z.
+  kubeconform -strict -summary -kubernetes-version "${KUBERNETES_VERSION:-1.35.0}" "$ROOT"/labs/*/{broken,fixed}.yaml
 else
   # `kubectl label --local` only catches YAML syntax errors, not misspelled fields or wrong types.
   echo "==> kubeconform not installed; skipping schema validation (CI installs it)"
@@ -139,6 +140,38 @@ debug_images='(nicolaka/netshoot|eclipse-temurin|tazhate/k8s-debug-container-[a-
 for file in "$LABS_MD" "$CMD_E2E" "$ROOT/scripts/lib.sh" "$ROOT"/labs/*/*.yaml; do
   unpinned="$(grep -noE "${debug_images}[^[:space:]\"'\`)]*" "$file" | grep -v '@sha256:[0-9a-f]\{64\}' || true)"
   [[ -z "$unpinned" ]] || die "${file#"$ROOT"/}: debug images must be pinned by digest: ${unpinned//$'\n'/ }"
+done
+
+echo "==> Image reference consistency (scripts/images.env)"
+# images.env is the source of truth. Every reference to one of its repositories in the guide, the
+# scripts, the lab manifests and the Dockerfiles must carry exactly the same tag and digest.
+consistency_files=("$LABS_MD" "$ROOT"/labs/*/*.yaml "$ROOT"/images/*/Dockerfile)
+for script in "$ROOT"/scripts/*.sh; do
+  # validate.sh quotes partial image names in its own grep patterns.
+  [[ "$(basename "$script")" == validate.sh ]] || consistency_files+=("$script")
+done
+for var in $RUNTIME_IMAGE_VARS $DEBUG_IMAGE_VARS; do
+  value="${!var}"
+  [[ "$value" == *@sha256:* ]] || die "scripts/images.env: $var is not pinned by digest: $value"
+  repo="${value%%@*}"
+  repo="${repo%%:*}"
+  mismatched="$(grep -hoE "(^|[^A-Za-z0-9/_.-])${repo}[:@][A-Za-z0-9._:@-]*" "${consistency_files[@]}" \
+    | sed 's/^[^a-z]*//' | sort -u | grep -vxF -- "$value" || true)"
+  [[ -z "$mismatched" ]] || die "$var drifted from scripts/images.env ($value); found: ${mismatched//$'\n'/ }"
+done
+# Lab workloads may only use the locally built image or a digest-pinned image.
+unpinned_lab_images="$(grep -ohE 'image: [^ ,}]+' "$ROOT"/labs/*/*.yaml | sort -u \
+  | grep -v '^image: debug-dojo-java:local$' | grep -v '@sha256:[0-9a-f]\{64\}$' || true)"
+[[ -z "$unpinned_lab_images" ]] || die "Lab manifests must pin images by digest: ${unpinned_lab_images//$'\n'/ }"
+
+echo "==> broken.yaml / fixed.yaml drift guard"
+# A reference repair is a small, targeted change. A larger diff means the two files drifted apart and
+# solve-lab.sh would silently revert unrelated edits.
+for lab in "$ROOT"/labs/*; do
+  [[ -d "$lab" ]] || continue
+  changed="$(diff "$lab/broken.yaml" "$lab/fixed.yaml" | grep -c '^[<>]' || true)"
+  (( changed >= 2 && changed <= 6 )) \
+    || die "$(basename "$lab"): broken.yaml and fixed.yaml differ by $changed lines (expected 2-6); keep fixed.yaml in step with broken.yaml"
 done
 
 echo "==> Arthas debug image guardrails"
