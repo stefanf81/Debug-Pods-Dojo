@@ -3,9 +3,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/lib.sh"
 echo "==> Debug Pods Dojo"
-BUILD_IMAGE="${DOJO_JAVA_IMAGE:-debug-dojo-java:local}"
-LAB_IMAGE="debug-dojo-java:local"
-ARTHAS_IMAGE="debug-dojo-arthas-jdk21:local"
 CONTEXT="$DOJO_CONTEXT"
 # Host port for the k3d load balancer (Ingress). Override to run several dojo clusters side by side.
 INGRESS_PORT="${INGRESS_PORT:-8080}"
@@ -61,20 +58,14 @@ wait_deployment() {
   kubectl --context "$CONTEXT" -n "$namespace" rollout status deployment/"$name" --timeout=180s
 }
 
-echo "==> Building distroless Java training image"
-docker build -t "$BUILD_IMAGE" "$ROOT/images/java-dojo"
-if [[ "$BUILD_IMAGE" != "$LAB_IMAGE" ]]; then
-  docker tag "$BUILD_IMAGE" "$LAB_IMAGE"
-fi
-
-echo "==> Building Java 21 Arthas debug image"
-docker build -t "$ARTHAS_IMAGE" "$ROOT/images/arthas-jdk21"
+build_local_images "$ROOT"
 
 # Capture the pre-dojo context before k3d creates the cluster and switches to it.
 remember_previous_context
 
 if k3d cluster get "$CLUSTER" >/dev/null 2>&1; then
   echo "==> k3d cluster '$CLUSTER' already exists"
+  echo "    (running Pods keep their current image; use ./scripts/rebuild.sh to roll out a rebuilt Java image)"
 else
   if port_is_listening "$INGRESS_PORT"; then
     echo "Host port ${INGRESS_PORT} is already in use. Stop the process using it or set INGRESS_PORT=<port>." >&2
@@ -118,6 +109,27 @@ for lab in "${labs[@]}"; do
   echo "    $(basename "$lab")"
   kubectl --context "$CONTEXT" apply -f "$lab/broken.yaml" >/dev/null
 done
+
+# Deployments created above start asynchronously (image pulls, JVM start-up). Wait a bounded time so
+# "ready" means ready; the Deployment that is broken on purpose (lab 14's victim) is excluded.
+wait_labs_ready() {
+  local deadline=$((SECONDS + ${LAB_READY_TIMEOUT:-240})) remaining lab ns
+  local pending=()
+  echo "==> Waiting for the lab workloads to start (up to ${LAB_READY_TIMEOUT:-240}s)"
+  for lab in "${labs[@]}"; do
+    ns="$(lab_namespace "$lab")"
+    remaining=$((deadline - SECONDS))
+    (( remaining >= 1 )) || remaining=1
+    kubectl --context "$CONTEXT" wait --for=condition=Available deployment \
+      -l '!dojo-expected-unavailable' -n "$ns" --timeout="${remaining}s" >/dev/null 2>&1 \
+      || pending+=("$ns")
+  done
+  if (( ${#pending[@]} > 0 )); then
+    echo "    still starting: ${pending[*]}" >&2
+    echo "    this is not an error; follow progress with ./scripts/status.sh" >&2
+  fi
+}
+wait_labs_ready
 
 # An existing cluster keeps the port it was created with, so report the real mapping. Under pipefail a
 # failing `docker port` (no load balancer container) would abort here, so fall back to INGRESS_PORT.

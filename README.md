@@ -112,7 +112,14 @@ Command-level test that runs the `LABS.md` debug commands in a disposable cluste
 
 Both tests create their own k3d cluster on a separate host port (8180 and 8280) with a private kubeconfig, so they can run while the main dojo is up without touching it or your current kubectl context. They ignore `CLUSTER` and `INGRESS_PORT`; set `E2E_CLUSTER` or `E2E_INGRESS_PORT` to override the test cluster's name or port, and `KEEP_CLUSTER=1` to keep it afterwards. `E2E_LABS="01 07"` limits `e2e-test.sh` to a subset of labs for a faster smoke test. GitHub Actions runs both suites nightly and on demand through the `e2e` workflow.
 
-If Docker reports `too many open files` while the second cluster starts (Docker Desktop has limited inotify watchers), stop the main dojo first with `k3d cluster stop debug-pods-dojo` and start it again afterwards.
+Two k3s clusters at once need more inotify instances than the Docker VM's default of 128. If the second cluster fails to start with `too many open files`, raise the limit (it is reset when the VM restarts), for example on Docker Desktop or Rancher Desktop:
+
+```bash
+docker run --rm --privileged --pid=host alpine nsenter -t 1 -m -u -n -i \
+  sysctl -w fs.inotify.max_user_instances=1024
+```
+
+Alternatively stop the main dojo with `k3d cluster stop debug-pods-dojo` while a test runs. `LABS.md` has a [troubleshooting table](LABS.md#troubleshooting) for the other common problems.
 
 Destroy:
 

@@ -164,6 +164,12 @@ unpinned_lab_images="$(grep -ohE 'image: [^ ,}]+' "$ROOT"/labs/*/*.yaml | sort -
   | grep -v '^image: debug-dojo-java:local$' | grep -v '@sha256:[0-9a-f]\{64\}$' || true)"
 [[ -z "$unpinned_lab_images" ]] || die "Lab manifests must pin images by digest: ${unpinned_lab_images//$'\n'/ }"
 
+# Every lab must appear in the LABS.md index so a new lab cannot be missed by the guide.
+for lab in "$ROOT"/labs/*; do
+  [[ -d "$lab" ]] || continue
+  need_text "$LABS_MD" "labs/$(basename "$lab")/" "LABS.md index is missing $(basename "$lab")"
+done
+
 echo "==> broken.yaml / fixed.yaml drift guard"
 # A reference repair is a small, targeted change. A larger diff means the two files drifted apart and
 # solve-lab.sh would silently revert unrelated edits.

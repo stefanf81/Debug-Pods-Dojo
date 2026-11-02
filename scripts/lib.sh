@@ -6,6 +6,21 @@ DOJO_CONTEXT="k3d-${CLUSTER}"
 source "$(dirname "${BASH_SOURCE[0]}")/images.env"
 PROBE_IMAGE="${PROBE_IMAGE:-$NETSHOOT_IMAGE}"
 CHECK_TIMEOUT="${CHECK_TIMEOUT:-90}"
+LAB_IMAGE="debug-dojo-java:local"
+ARTHAS_IMAGE="debug-dojo-arthas-jdk21:local"
+
+# Build the two local images the labs use: the distroless Java training app and the Java 21 Arthas
+# debug image. DOJO_JAVA_IMAGE builds the app under another name first and tags it as $LAB_IMAGE.
+build_local_images() {
+  local root="$1" build_image="${DOJO_JAVA_IMAGE:-$LAB_IMAGE}"
+  echo "==> Building distroless Java training image"
+  docker build -t "$build_image" "$root/images/java-dojo"
+  if [[ "$build_image" != "$LAB_IMAGE" ]]; then
+    docker tag "$build_image" "$LAB_IMAGE"
+  fi
+  echo "==> Building Java 21 Arthas debug image"
+  docker build -t "$ARTHAS_IMAGE" "$root/images/arthas-jdk21"
+}
 
 require_dojo_context() {
   command -v kubectl >/dev/null 2>&1 || { echo "Missing required command: kubectl" >&2; exit 1; }
@@ -16,9 +31,17 @@ require_dojo_context() {
 Refusing to run against Kubernetes context: ${current:-<none>}
 Expected disposable context: $DOJO_CONTEXT
 
-Switch explicitly with:
-  kubectl config use-context $DOJO_CONTEXT
 EOF
+    if context_exists "$DOJO_CONTEXT"; then
+      echo "Switch explicitly with:" >&2
+      echo "  kubectl config use-context $DOJO_CONTEXT" >&2
+    elif command -v k3d >/dev/null 2>&1 && k3d cluster get "$CLUSTER" >/dev/null 2>&1; then
+      # Another tool rewrote ~/.kube/config and dropped the dojo's entry; the cluster itself is fine.
+      echo "The cluster '$CLUSTER' is running, but its kubeconfig context is missing. Restore it with:" >&2
+      echo "  k3d kubeconfig merge $CLUSTER --kubeconfig-merge-default --kubeconfig-switch-context" >&2
+    else
+      echo "The cluster '$CLUSTER' does not exist. Create it with ./scripts/up.sh" >&2
+    fi
     exit 1
   fi
 }

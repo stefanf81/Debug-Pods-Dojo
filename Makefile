@@ -1,4 +1,15 @@
-.PHONY: up down status reset reset-lab check check-all solve preload validate lint e2e command-e2e
+.PHONY: help up down status reset reset-lab check check-all solve preload rebuild clean validate lint e2e command-e2e
+help:
+	@echo "Targets:"
+	@echo "  up / down            create or delete the k3d cluster and the labs"
+	@echo "  status               list lab Pods"
+	@echo "  check LAB=07         check one lab        check-all   check every deployed lab"
+	@echo "  reset-lab LAB=07     redeploy one lab     reset       redeploy all labs"
+	@echo "  solve LAB=07         apply the reference repair"
+	@echo "  preload [SCOPE=runtime|debug]   load third-party images into the nodes"
+	@echo "  rebuild              rebuild the Java images and restart the lab Deployments"
+	@echo "  clean                remove leftover node debug and checker Pods"
+	@echo "  validate / lint      static checks         e2e / command-e2e   disposable-cluster tests"
 up:
 	./scripts/up.sh
 down:
@@ -17,6 +28,10 @@ check-all:
 	./scripts/check-all.sh
 preload:
 	./scripts/preload.sh $(if $(SCOPE),--$(SCOPE),--all)
+rebuild:
+	./scripts/rebuild.sh
+clean:
+	./scripts/clean.sh
 solve:
 	@test -n "$(LAB)" || (echo "Usage: make solve LAB=07" && exit 2)
 	./scripts/solve-lab.sh "$(LAB)"

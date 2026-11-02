@@ -14,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -127,7 +128,24 @@ public final class DojoApp {
         second.start();
     }
 
+    // HotSpot never overwrites an existing -XX:HeapDumpPath file, and /tmp survives container restarts,
+    // so the dump from one OutOfMemoryError would silently block the dump from every later one. Keep
+    // the earlier dump next to the new one instead of losing either.
+    private static void rotateOomDump() {
+        Path dump = Path.of(env("OOME_DUMP_PATH", "/tmp/oome.hprof"));
+        try {
+            if (Files.exists(dump)) {
+                Path previous = dump.resolveSibling("oome-previous.hprof");
+                Files.move(dump, previous, StandardCopyOption.REPLACE_EXISTING);
+                System.out.println("kept the earlier OutOfMemoryError heap dump as " + previous);
+            }
+        } catch (IOException e) {
+            System.err.println("could not rotate " + dump + ": " + e);
+        }
+    }
+
     private static void startMemoryLeak() {
+        rotateOomDump();
         Thread t = new Thread(() -> {
             long mib = Long.parseLong(env("LEAK_CHUNK_MIB", "8"));
             int chunkBytes = Math.toIntExact(mib * 1024 * 1024);

@@ -4,13 +4,13 @@
 
 ## Goal
 
-The Java heap steadily grows. Attach before it reaches OOM and determine what is accumulating. On OOM the JVM writes `/tmp/oome.hprof` and exits, and the container restarts with a fresh heap.
+The Java heap steadily grows. Attach before it reaches OOM and determine what is accumulating. On OOM the JVM writes `/tmp/oome.hprof` and exits, and the container restarts with a fresh heap. The app keeps the previous dump as `/tmp/oome-previous.hprof` on restart.
 
 ## What to practice
 
 - `jcmd <PID> GC.class_histogram`
 - `jstat -gc`
-- `jcmd <PID> GC.heap_dump /tmp/heap.hprof`
+- `jcmd <PID> GC.heap_dump -overwrite /tmp/heap.hprof`
 - `VM.native_memory summary`
 - `kubectl cp` or streamed copy of heap/JFR artifacts
 

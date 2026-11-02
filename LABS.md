@@ -4,6 +4,31 @@ Do not open `fixed.yaml` or `ANSWERS.md` until you want the reference repair.
 
 Run the commands from the repository root: the `profiles/` files passed to `--custom` and the `./scripts/` paths are relative to it.
 
+## Labs at a glance
+
+| Lab | Topic | Debug image | Lab files |
+|---:|---|---|---|
+| 01 | [Netshoot: Service/TCP path](#lab-01--netshoot-servicetcp-path) | Netshoot | [`01-netshoot-service/`](labs/01-netshoot-service/) |
+| 02 | [Netshoot: DNS](#lab-02--netshoot-dns) | Netshoot | [`02-netshoot-dns/`](labs/02-netshoot-dns/) |
+| 03 | [Netshoot: NetworkPolicy](#lab-03--netshoot-networkpolicy) | Netshoot | [`03-netshoot-networkpolicy/`](labs/03-netshoot-networkpolicy/) |
+| 04 | [Netshoot: TLS/protocol mismatch](#lab-04--netshoot-tlsprotocol-mismatch) | Netshoot | [`04-netshoot-tls/`](labs/04-netshoot-tls/) |
+| 05 | [Netshoot: Ingress → Service → Pod](#lab-05--netshoot-ingress--service--pod) | Netshoot | [`05-netshoot-ingress/`](labs/05-netshoot-ingress/) |
+| 06 | [Netshoot: nmap, iperf3, tcpdump, mtr](#lab-06--netshoot-nmap-iperf3-tcpdump-mtr) | Netshoot | [`06-netshoot-throughput/`](labs/06-netshoot-throughput/) |
+| 07 | [Temurin JDK: CPU, threads, JFR and NMT](#lab-07--temurin-jdk-cpu-threads-jfr-and-nmt) | Temurin JDK | [`07-jdk-java-cpu/`](labs/07-jdk-java-cpu/) |
+| 08 | [Temurin / Arthas: deadlock](#lab-08--temurin--arthas-deadlock) | Temurin JDK / Arthas | [`08-jdk-java-deadlock/`](labs/08-jdk-java-deadlock/) |
+| 09 | [Temurin JDK: memory growth and heap dump](#lab-09--temurin-jdk-memory-growth-and-heap-dump) | Temurin JDK | [`09-jdk-java-memory/`](labs/09-jdk-java-memory/) |
+| 10 | [Arthas: live method diagnostics](#lab-10--arthas-live-method-diagnostics) | Arthas | [`10-arthas-slow-method/`](labs/10-arthas-slow-method/) |
+| 11 | [Storage toolbox](#lab-11--storage-toolbox) | Storage toolbox | [`11-storage-pvc/`](labs/11-storage-pvc/) |
+| 12 | [DB toolbox](#lab-12--db-toolbox) | DB toolbox | [`12-database-postgres/`](labs/12-database-postgres/) |
+| 13 | [Performance toolbox: strace and process inspection](#lab-13--performance-toolbox-strace-and-process-inspection) | Perf toolbox | [`13-perf-syscalls/`](labs/13-perf-syscalls/) |
+| 14 | [Node debug with Netshoot](#lab-14--node-debug-with-netshoot) | Netshoot (node) | [`14-node-netshoot/`](labs/14-node-netshoot/) |
+| 15 | [Stress/load debug image](#lab-15--stressload-debug-image) | Stress toolbox | [`15-stress-load/`](labs/15-stress-load/) |
+| 16 | [gProfiler node-wide profiling](#lab-16--gprofiler-node-wide-profiling) | gProfiler (node) | [`16-gprofiler-node/`](labs/16-gprofiler-node/) |
+
+Check your progress with `./scripts/check-lab.sh <number>` or all deployed labs at once with `./scripts/check-all.sh`. If something does not work as described, see [Troubleshooting](#troubleshooting).
+
+---
+
 ## Common debug patterns
 
 ### Ephemeral container in an existing Pod
@@ -435,7 +460,7 @@ Namespace: `dojo-09-java-memory`
 
 Attach early; the lab intentionally keeps allocating.
 
-About ten minutes after each start the heap is exhausted: the JVM writes `/tmp/oome.hprof`, exits, and the kubelet restarts the container (watch the `RESTARTS` column) so the leak starts over. The restart also ends any ephemeral debug container targeting `app`, because it shares that container's PID namespace, so start a new debug session afterwards. To start from a fresh, small heap, run `./scripts/reset-lab.sh 09`.
+About ten minutes after each start the heap is exhausted: the JVM writes `/tmp/oome.hprof`, exits, and the kubelet restarts the container (watch the `RESTARTS` column) so the leak starts over. On each restart the app keeps the earlier dump as `/tmp/oome-previous.hprof`, so the newest OutOfMemoryError dump is always `/tmp/oome.hprof`. The restart also ends any ephemeral debug container targeting `app`, because it shares that container's PID namespace, so start a new debug session afterwards. To start from a fresh, small heap, run `./scripts/reset-lab.sh 09`.
 
 ```bash
 jcmd <PID> GC.class_histogram
@@ -448,10 +473,10 @@ Repeat the histogram and observe growing `byte[]` retention.
 Create a heap dump:
 
 ```bash
-jcmd <PID> GC.heap_dump /tmp/heap.hprof
+jcmd <PID> GC.heap_dump -overwrite /tmp/heap.hprof
 ```
 
-Copy it out before terminating the debug session. For large heap dumps, streaming avoids any dependency on `tar`:
+`-overwrite` lets you repeat the dump, because HotSpot refuses to write over an existing file. Copy it out before terminating the debug session. For large heap dumps, streaming avoids any dependency on `tar`:
 
 ```bash
 kubectl exec -n dojo-09-java-memory \
@@ -810,3 +835,19 @@ You should get a collapsed profile and an HTML flamegraph. The goal is to find t
 
 `check-all.sh` reports the state of every deployed lab in one table.
 `check-lab.sh` tests each lab's success condition (for example, that the Service answers or that the fault-injection threads are gone), so any correct repair passes, not only the one in `fixed.yaml`. It starts a short-lived Netshoot probe Pod in the lab namespace; set `CHECK_VERBOSE=1` to see what it ran into.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `./scripts/up.sh` stops with "Host port 8080 is already in use" | Something else listens on the Ingress port. Free it or choose another: `INGRESS_PORT=8081 ./scripts/up.sh`. |
+| A Pod sits in `ErrImagePull` / `ImagePullBackOff` | The registry timed out or rate-limited the node. Load the images once with `./scripts/preload.sh` (or `PRELOAD=runtime ./scripts/up.sh` when creating the cluster); the node then reuses them. |
+| Cluster creation times out, a node log shows `too many open files` | Docker's VM ran out of inotify instances (default 128; each k3s node uses many). Raise it, e.g. on Docker Desktop / Rancher Desktop: `docker run --rm --privileged --pid=host alpine nsenter -t 1 -m -u -n -i sysctl -w fs.inotify.max_user_instances=1024`. The setting is lost when the VM restarts. |
+| Several Java labs make the machine slow | Labs 07 and 16 each keep a CPU core busy. Deploy only what you are working on: `LABS="01 07" ./scripts/up.sh`. |
+| `kubectl top` says metrics are not available | metrics-server needs about a minute after the cluster starts. Retry shortly. |
+| Debug Pods are left over | Remove node debug and checker Pods with `./scripts/clean.sh` (or `make clean`). |
+| `up.sh` reports labs still starting | Image pulls and the Java start take a while on a cold cluster. Watch with `./scripts/status.sh`, or `kubectl get pods -A --watch`. |
+| You rebuilt the Java image and nothing changed | Running Pods keep the old image. Run `./scripts/rebuild.sh` (or `make rebuild`) to import it and restart the lab Deployments. |
+| `check-lab.sh` reports a check error (exit 2) | The checker's probe Pod could not run, often an image pull problem. Run `CHECK_VERBOSE=1 ./scripts/check-lab.sh <number>` for the probe output. |

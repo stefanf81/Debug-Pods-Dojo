@@ -20,7 +20,7 @@ fi
 # correct repair passes. Probes run from a short-lived Netshoot Pod inside the lab namespace.
 # Exit status: 0 fixed, 1 not fixed yet, 2 the check itself could not run.
 pass() { echo "PASS: $name"; exit 0; }
-fail() { echo "NOT FIXED YET: $name"; echo "Hint: $*"; exit 1; }
+fail() { echo "NOT FIXED YET: $name"; echo "Hint: $*"; echo "(CHECK_VERBOSE=1 ./scripts/check-lab.sh $num shows what the probe saw)"; exit 1; }
 ready() { wait_rollout "$ns" "$1" || fail "deployment/$1 is not rolled out and ready yet"; }
 
 # Probe script: <base-url>/dependency must answer UP from the backend Service. The app echoes its

@@ -13,7 +13,7 @@ spec:
   template:
     metadata: {labels: {app: api}}
     spec:
-      volumes: [{name: shared-tmp, emptyDir: {}}]
+      volumes: [{name: shared-tmp, emptyDir: {sizeLimit: 1Gi}}]
       containers:
         - name: app
           image: debug-dojo-java:local

@@ -22,7 +22,7 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: victim, namespace: dojo-14-node}
+metadata: {name: victim, namespace: dojo-14-node, labels: {dojo-expected-unavailable: "true"}}
 spec:
   replicas: 1
   selector: {matchLabels: {app: victim}}
