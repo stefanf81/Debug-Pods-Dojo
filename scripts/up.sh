@@ -58,6 +58,43 @@ wait_deployment() {
   kubectl --context "$CONTEXT" -n "$namespace" rollout status deployment/"$name" --timeout=180s
 }
 
+# Print the end of each node container's log. k3d's own error only says a node "failed to get
+# ready"; the reason (a crash-looping k3s agent, a resource limit) is in the container log.
+dump_node_logs() {
+  local node
+  while IFS= read -r node; do
+    [[ -n "$node" ]] || continue
+    echo "----- $node ($(docker inspect -f '{{.State.Status}}, restarts={{.RestartCount}}' "$node" 2>/dev/null || echo unknown)) -----" >&2
+    docker logs --tail 40 "$node" 2>&1 | sed 's/^/    /' >&2 || true
+  done <<<"$(docker ps -a --filter "label=k3d.cluster=$CLUSTER" --format '{{.Names}}' 2>/dev/null | sort)"
+}
+
+# Create the cluster, retrying when a node fails to come up. --no-rollback keeps the failed node
+# containers so their logs can be printed before the cluster is deleted; without it k3d deletes
+# them first and the cause is lost. One retry covers a node that fails once at start-up (a k3s
+# agent crash-looped on a CI runner while the same commit passed on other runners).
+create_cluster() {
+  local attempt=1 attempts="${CLUSTER_CREATE_ATTEMPTS:-2}"
+  while :; do
+    echo "==> Creating 1-server + 2-agent k3d cluster (Ingress on host port $INGRESS_PORT)"
+    if k3d cluster create "$CLUSTER" \
+      --servers 1 \
+      --agents 2 \
+      --port "${INGRESS_PORT}:80@loadbalancer" \
+      --wait \
+      --timeout "${CLUSTER_START_TIMEOUT:-300}s" \
+      --no-rollback; then
+      return 0
+    fi
+    echo "Cluster creation failed (attempt $attempt of $attempts). Node container logs:" >&2
+    dump_node_logs
+    k3d cluster delete "$CLUSTER" >/dev/null 2>&1 || true
+    (( attempt < attempts )) || { echo "Could not create k3d cluster '$CLUSTER'." >&2; exit 1; }
+    attempt=$((attempt + 1))
+    sleep 5
+  done
+}
+
 build_local_images "$ROOT"
 
 # Capture the pre-dojo context before k3d creates the cluster and switches to it.
@@ -71,13 +108,7 @@ else
     echo "Host port ${INGRESS_PORT} is already in use. Stop the process using it or set INGRESS_PORT=<port>." >&2
     exit 1
   fi
-  echo "==> Creating 1-server + 2-agent k3d cluster (Ingress on host port $INGRESS_PORT)"
-  k3d cluster create "$CLUSTER" \
-    --servers 1 \
-    --agents 2 \
-    --port "${INGRESS_PORT}:80@loadbalancer" \
-    --wait \
-    --timeout "${CLUSTER_START_TIMEOUT:-300}s"
+  create_cluster
 fi
 
 echo "==> Importing local Java and Arthas debug images"

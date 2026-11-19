@@ -12,6 +12,15 @@ inputs:
 runs:
   using: composite
   steps:
+    # Three k3s nodes share the runner's kernel. Each kubelet, containerd and k3s process takes
+    # inotify instances, and the runner default (128 per user) can run out. When it does, a node
+    # crash-loops at start-up ("too many open files").
+    - name: Raise inotify limits
+      shell: bash
+      run: |
+        sudo sysctl -w fs.inotify.max_user_instances=1024
+        sudo sysctl -w fs.inotify.max_user_watches=1048576
+
     - name: Install k3d
       shell: bash
       env:
