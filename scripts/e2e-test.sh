@@ -89,4 +89,19 @@ for lab in "${labs[@]}"; do
 done
 check_phase 0
 
+# A learner who stops the cluster and runs up.sh again must get it back with their repairs intact:
+# up.sh has to start the stopped nodes, skip re-importing unchanged images and leave deployed labs
+# alone. E2E_RESTART=0 skips this phase.
+if [[ "${E2E_RESTART:-1}" != 0 ]]; then
+  echo "==> Stop the cluster, run up.sh again, repairs must survive"
+  k3d cluster stop "$CLUSTER" >/dev/null
+  out="$("$ROOT/scripts/up.sh" 2>&1)" || { printf '%s\n' "$out" >&2; echo "up.sh failed on the stopped cluster" >&2; exit 1; }
+  printf '%s\n' "$out" | grep -E '^==> (Starting|Keeping|Deploying)|up to date' | sed 's/^/    /'
+  grep -q '^==> Starting the stopped cluster' <<<"$out" \
+    || { printf '%s\n' "$out" >&2; echo "up.sh did not start the stopped cluster" >&2; exit 1; }
+  ! grep -q '^==> Deploying' <<<"$out" \
+    || { printf '%s\n' "$out" >&2; echo "up.sh redeployed labs that were already deployed" >&2; exit 1; }
+  check_phase 0
+fi
+
 echo "E2E reference-state test: PASS (${#labs[@]} labs)"

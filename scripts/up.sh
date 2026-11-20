@@ -198,13 +198,39 @@ if ! context_exists "$CONTEXT"; then
 fi
 kubectl config use-context "$CONTEXT" >/dev/null
 
+# Deploy only the labs whose namespace does not exist yet. Applying broken.yaml over a lab that is
+# already there would silently undo the learner's repair; reset-lab.sh and reset-all.sh do that on
+# purpose. A namespace that is still being deleted (an interrupted reset) is waited out and redeployed.
+to_deploy=()
+kept=()
+for lab in "${labs[@]}"; do
+  ns="$(lab_namespace "$lab")"
+  phase=""
+  [[ -n "$ns" ]] && phase="$(kubectl --context "$CONTEXT" get namespace "$ns" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+  if [[ "$phase" == Terminating ]]; then
+    echo "==> Waiting for namespace $ns to finish deleting"
+    kubectl --context "$CONTEXT" wait --for=delete "namespace/$ns" --timeout=180s >/dev/null 2>&1 \
+      || { echo "Timed out waiting for namespace $ns to be deleted" >&2; exit 1; }
+    phase=""
+  fi
+  if [[ -n "$phase" ]]; then kept+=("$lab"); else to_deploy+=("$lab"); fi
+done
+
+if (( ${#kept[@]} > 0 )); then
+  echo "==> Keeping ${#kept[@]} lab(s) that are already deployed, with any repairs you made"
+  for lab in "${kept[@]}"; do echo "    $(basename "$lab")"; done
+  echo "    (./scripts/reset-lab.sh <number> or ./scripts/reset-all.sh redeploys the broken scenario)"
+fi
+
 # Apply the labs first so their image pulls and JVM starts overlap with K3s installing Traefik and
 # metrics-server. Nothing in the lab manifests needs those components to exist when it is created.
-echo "==> Deploying ${#labs[@]} debug-pod-focused scenarios"
-for lab in "${labs[@]}"; do
-  echo "    $(basename "$lab")"
-  kubectl --context "$CONTEXT" apply -f "$lab/broken.yaml" >/dev/null
-done
+if (( ${#to_deploy[@]} > 0 )); then
+  echo "==> Deploying ${#to_deploy[@]} debug-pod-focused scenario(s)"
+  for lab in "${to_deploy[@]}"; do
+    echo "    $(basename "$lab")"
+    kubectl --context "$CONTEXT" apply -f "$lab/broken.yaml" >/dev/null
+  done
+fi
 
 echo "==> Waiting for K3s packaged components used by the labs"
 wait_deployment kube-system coredns
@@ -212,12 +238,14 @@ wait_deployment kube-system metrics-server
 wait_deployment kube-system traefik
 
 # Deployments created above start asynchronously (image pulls, JVM start-up). Wait a bounded time so
-# "ready" means ready; the Deployment that is broken on purpose (lab 14's victim) is excluded.
+# "ready" means ready; the Deployment that is broken on purpose (lab 14's victim) is excluded. Kept
+# labs are not waited for: a repair in progress may leave them unavailable on purpose.
 wait_labs_ready() {
   local deadline=$((SECONDS + ${LAB_READY_TIMEOUT:-240})) remaining lab ns
   local pending=()
+  (( ${#to_deploy[@]} > 0 )) || return 0
   echo "==> Waiting for the lab workloads to start (up to ${LAB_READY_TIMEOUT:-240}s)"
-  for lab in "${labs[@]}"; do
+  for lab in "${to_deploy[@]}"; do
     ns="$(lab_namespace "$lab")"
     remaining=$((deadline - SECONDS))
     (( remaining >= 1 )) || remaining=1

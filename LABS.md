@@ -849,7 +849,7 @@ You should get a collapsed profile and an HTML flamegraph. The goal is to find t
 | Several Java labs make the machine slow | Labs 07 and 16 each keep half a CPU core busy. Deploy only what you are working on: `LABS="01 07" ./scripts/up.sh`. |
 | `kubectl top` says metrics are not available | metrics-server needs about a minute after the cluster starts. Retry shortly. |
 | Debug Pods are left over | Remove node debug and checker Pods with `./scripts/clean.sh` (or `make clean`). |
-| You stopped the cluster with `k3d cluster stop` | `k3d cluster start debug-pods-dojo` resumes it as it was. `./scripts/up.sh` also starts a stopped cluster, but it redeploys every lab's broken manifest. |
+| You stopped the cluster with `k3d cluster stop` | Run `./scripts/up.sh` (or `k3d cluster start debug-pods-dojo`). It starts the cluster again and leaves deployed labs, and your repairs, as they were. |
 | `up.sh` reports labs still starting | Image pulls and the Java start take a while on a cold cluster. Watch with `./scripts/status.sh`, or `kubectl get pods -A --watch`. |
 | You rebuilt the Java image and nothing changed | Running Pods keep the old image. Run `./scripts/rebuild.sh` (or `make rebuild`) to import it and restart the lab Deployments. |
 | `check-lab.sh` reports a check error (exit 2) | The checker's probe Pod could not run, often an image pull problem. Run `CHECK_VERBOSE=1 ./scripts/check-lab.sh <number>` for the probe output. |

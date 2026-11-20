@@ -52,7 +52,7 @@ Every lab is deployed by default. Labs 07 and 16 each keep half a CPU core busy,
 LABS="01 07" ./scripts/up.sh
 ```
 
-`LABS` is also honoured by `./scripts/reset-all.sh`. When `LABS` leaves out Labs 08 and 10, `up.sh` skips building the 700 MB Arthas debug image; `./scripts/rebuild.sh` builds it later, and `DOJO_ARTHAS=1` forces it. The Ingress is published on host port 8080; set `INGRESS_PORT` when creating the cluster to use another port.
+Running `up.sh` again is safe: it starts a stopped cluster and deploys only labs that are not deployed yet, so your repairs stay in place (use `./scripts/reset-lab.sh` or `./scripts/reset-all.sh` to start a lab over). `LABS` is also honoured by `./scripts/reset-all.sh`. When `LABS` leaves out Labs 08 and 10, `up.sh` skips building the 700 MB Arthas debug image; `./scripts/rebuild.sh` builds it later, and `DOJO_ARTHAS=1` forces it. The Ingress is published on host port 8080; set `INGRESS_PORT` when creating the cluster to use another port.
 
 Then:
 
@@ -121,7 +121,7 @@ docker run --rm --privileged --pid=host alpine nsenter -t 1 -m -u -n -i \
   sysctl -w fs.inotify.max_user_instances=1024
 ```
 
-Alternatively stop the main dojo with `k3d cluster stop debug-pods-dojo` while a test runs, and resume it with `k3d cluster start debug-pods-dojo` (`./scripts/up.sh` also starts a stopped cluster, but redeploys the broken labs). `LABS.md` has a [troubleshooting table](LABS.md#troubleshooting) for the other common problems.
+Alternatively stop the main dojo with `k3d cluster stop debug-pods-dojo` while a test runs, and resume it afterwards with `./scripts/up.sh` (or `k3d cluster start debug-pods-dojo`). `LABS.md` has a [troubleshooting table](LABS.md#troubleshooting) for the other common problems.
 
 Destroy:
 
