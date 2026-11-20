@@ -101,6 +101,9 @@ if [[ "${E2E_RESTART:-1}" != 0 ]]; then
     || { printf '%s\n' "$out" >&2; echo "up.sh did not start the stopped cluster" >&2; exit 1; }
   ! grep -q '^==> Deploying' <<<"$out" \
     || { printf '%s\n' "$out" >&2; echo "up.sh redeployed labs that were already deployed" >&2; exit 1; }
+  # up.sh rebuilt the Java image from the cache; that must not count as a new image.
+  grep -q "$LAB_IMAGE is up to date on all" <<<"$out" \
+    || { printf '%s\n' "$out" >&2; echo "up.sh re-imported $LAB_IMAGE although it did not change" >&2; exit 1; }
   check_phase 0
 fi
 

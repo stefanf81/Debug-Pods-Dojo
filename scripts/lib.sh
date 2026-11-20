@@ -181,16 +181,31 @@ k3d_stopped_node_count() {
   echo $((all - running))
 }
 
-# True when the node holds exactly the local image <name>, identified by Docker's image ID <id>.
-# With Docker's containerd image store that ID is the digest containerd records for the import;
-# with the classic store it is the image config digest, which is what crictl reports as the ID.
+# Digests that identify the local image <name> for node_has_local_image, one per line: Docker's
+# image ID and, where Docker can report it, the manifest for its own platform. With Docker's
+# containerd image store the ID is an index digest that changes on every build, even a fully cached
+# one (BuildKit writes a new attestation manifest), while the platform manifest stays the same; with
+# the classic store the ID is the image config digest, which is also stable.
+local_image_digests() {
+  local platform
+  docker image inspect -f '{{.Id}}' "$1" || return 1
+  platform="$(docker version -f '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null || true)"
+  [[ -n "$platform" ]] && docker image inspect --platform "$platform" -f '{{.Id}}' "$1" 2>/dev/null || true
+}
+
+# True when the node holds the local image <name> with one of the given digests: the digest the
+# image name points to, a digest that target references (an index lists its platform manifests, a
+# manifest its config) or the config digest crictl reports as the image ID.
 node_has_local_image() {
-  local node="$1" ref="docker.io/library/$2" id="$3"
+  local node="$1" ref="docker.io/library/$2" digests="$3"
   # shellcheck disable=SC2016
   docker exec "$node" sh -c '
-    ctr -n k8s.io images ls 2>/dev/null | awk -v ref="$1" "\$1 == ref {print \$3}"
+    t="$(ctr -n k8s.io images ls 2>/dev/null | awk -v ref="$1" "\$1 == ref {print \$3}")"
+    [ -n "$t" ] || exit 0
+    echo "$t"
+    ctr -n k8s.io content get "$t" 2>/dev/null | grep -o "sha256:[0-9a-f]*"
     crictl inspecti -o go-template --template "{{.status.id}}" "$1" 2>/dev/null' _ "$ref" \
-    | grep -xF -- "$id" >/dev/null
+    | grep -xF -f <(printf '%s\n' "$digests" | grep .) >/dev/null
 }
 
 # Import the local images named as arguments (default: both) into every node, skipping nodes that
@@ -207,7 +222,7 @@ import_local_images() {
   (( ${#nodes[@]} > 0 )) || { echo "No running k3d nodes found for cluster '$CLUSTER'." >&2; return 1; }
   tmp="$(mktemp -d)"
   for image in "$@"; do
-    id="$(docker image inspect -f '{{.Id}}' "$image")" \
+    id="$(local_image_digests "$image")" \
       || { rm -rf "$tmp"; echo "Local image $image does not exist; build it first." >&2; return 1; }
     stale=()
     for node in "${nodes[@]}"; do
