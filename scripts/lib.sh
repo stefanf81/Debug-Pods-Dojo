@@ -9,17 +9,48 @@ CHECK_TIMEOUT="${CHECK_TIMEOUT:-90}"
 LAB_IMAGE="debug-dojo-java:local"
 ARTHAS_IMAGE="debug-dojo-arthas-jdk21:local"
 
-# Build the two local images the labs use: the distroless Java training app and the Java 21 Arthas
-# debug image. DOJO_JAVA_IMAGE builds the app under another name first and tags it as $LAB_IMAGE.
+# The locally built images to provide, one per line. The Java training app always; the Arthas debug
+# image (about 700 MB) only when it can be used: DOJO_ARTHAS=1 forces it, DOJO_ARTHAS=0 skips it, and
+# by default it is skipped only when LABS selects labs that do not include 08 or 10.
+local_images() {
+  printf '%s\n' "$LAB_IMAGE"
+  case "${DOJO_ARTHAS:-auto}" in
+    1|yes) printf '%s\n' "$ARTHAS_IMAGE" ;;
+    0|no) ;;
+    *)
+      local prefix
+      [[ -n "${LABS:-}" ]] || { printf '%s\n' "$ARTHAS_IMAGE"; return 0; }
+      for prefix in ${LABS//,/ }; do
+        [[ "$prefix" =~ ^[0-9]+$ ]] && prefix=$(printf '%02d' "$((10#$prefix))")
+        case "$prefix" in 08*|10*) printf '%s\n' "$ARTHAS_IMAGE"; return 0 ;; esac
+      done
+      ;;
+  esac
+}
+
+# Build the local images named as arguments (default: both). The distroless Java training app comes
+# from images/java-dojo, the Java 21 Arthas debug image from images/arthas-jdk21. DOJO_JAVA_IMAGE
+# builds the app under another name first and tags it as $LAB_IMAGE.
 build_local_images() {
-  local root="$1" build_image="${DOJO_JAVA_IMAGE:-$LAB_IMAGE}"
-  echo "==> Building distroless Java training image"
-  docker build -t "$build_image" "$root/images/java-dojo"
-  if [[ "$build_image" != "$LAB_IMAGE" ]]; then
-    docker tag "$build_image" "$LAB_IMAGE"
-  fi
-  echo "==> Building Java 21 Arthas debug image"
-  docker build -t "$ARTHAS_IMAGE" "$root/images/arthas-jdk21"
+  local root="$1" image build_image="${DOJO_JAVA_IMAGE:-$LAB_IMAGE}"
+  shift
+  (( $# > 0 )) || set -- "$LAB_IMAGE" "$ARTHAS_IMAGE"
+  for image in "$@"; do
+    case "$image" in
+      "$LAB_IMAGE")
+        echo "==> Building distroless Java training image"
+        docker build -t "$build_image" "$root/images/java-dojo"
+        if [[ "$build_image" != "$LAB_IMAGE" ]]; then
+          docker tag "$build_image" "$LAB_IMAGE"
+        fi
+        ;;
+      "$ARTHAS_IMAGE")
+        echo "==> Building Java 21 Arthas debug image"
+        docker build -t "$ARTHAS_IMAGE" "$root/images/arthas-jdk21"
+        ;;
+      *) echo "build_local_images: unknown image $image" >&2; return 1 ;;
+    esac
+  done
 }
 
 require_dojo_context() {
@@ -104,7 +135,7 @@ pod_ips() {
 probe() {
   local ns="$1" script="$2" attempts="${3:-5}"
   local name="dojo-check-${RANDOM}${RANDOM}" phase="" reason="" k=(kubectl --context "$DOJO_CONTEXT" -n "$ns")
-  local wrapped="for i in \$(seq 1 $attempts); do ( $script ) && exit 0; sleep 2; done; exit 1"
+  local wrapped="for i in \$(seq 1 $attempts); do ( $script ) && exit 0; [ \$i -lt $attempts ] && sleep 2; done; exit 1"
   if ! "${k[@]}" run "$name" --restart=Never --image="$PROBE_IMAGE" --labels=dojo-check=true \
     --command -- sh -c "$wrapped" >/dev/null; then
     echo "CHECK ERROR: could not create the probe Pod in namespace $ns" >&2
@@ -141,35 +172,88 @@ k3d_node_containers() {
   done
 }
 
-# True when the node's containerd knows the image under its normalised name.
-node_has_image() {
-  docker exec "$1" ctr -n k8s.io images ls -q 2>/dev/null | grep -xF -- "docker.io/library/$2" >/dev/null
+# Number of k3d server/agent containers of $CLUSTER that exist but are not running (a stopped cluster).
+k3d_stopped_node_count() {
+  local all running
+  all="$(docker ps -a -q --filter "label=k3d.cluster=$CLUSTER" --filter "label=k3d.role=server" | wc -l)"
+  all=$((all + $(docker ps -a -q --filter "label=k3d.cluster=$CLUSTER" --filter "label=k3d.role=agent" | wc -l)))
+  running="$(k3d_node_containers | grep -c . || true)"
+  echo $((all - running))
 }
 
-# Import the locally built images into every node and prove it worked. `k3d image import` can print
-# "Successfully imported" and exit 0 while the nodes failed to read its tarball (seen on CI runners);
-# the Java labs then never start because the local image cannot be pulled. So check each node and
-# fall back to loading the image with Docker directly.
+# True when the node holds exactly the local image <name>, identified by Docker's image ID <id>.
+# With Docker's containerd image store that ID is the digest containerd records for the import;
+# with the classic store it is the image config digest, which is what crictl reports as the ID.
+node_has_local_image() {
+  local node="$1" ref="docker.io/library/$2" id="$3"
+  # shellcheck disable=SC2016
+  docker exec "$node" sh -c '
+    ctr -n k8s.io images ls 2>/dev/null | awk -v ref="$1" "\$1 == ref {print \$3}"
+    crictl inspecti -o go-template --template "{{.status.id}}" "$1" 2>/dev/null' _ "$ref" \
+    | grep -xF -- "$id" >/dev/null
+}
+
+# Import the local images named as arguments (default: both) into every node, skipping nodes that
+# already hold the same build, and prove it worked. `k3d image import` can print "Successfully
+# imported" and exit 0 while the nodes failed to read its tarball (seen on CI runners); the Java labs
+# then never start because the local image cannot be pulled. So check each node and fall back to
+# loading the image with Docker directly.
 import_local_images() {
-  local image node tarball tmp
-  k3d image import -c "$CLUSTER" "$LAB_IMAGE" "$ARTHAS_IMAGE" || true
+  local image id node tarball tmp stale nodes=()
+  (( $# > 0 )) || set -- "$LAB_IMAGE" "$ARTHAS_IMAGE"
+  while IFS= read -r node; do
+    [[ -n "$node" ]] && nodes+=("$node")
+  done <<<"$(k3d_node_containers)"
+  (( ${#nodes[@]} > 0 )) || { echo "No running k3d nodes found for cluster '$CLUSTER'." >&2; return 1; }
   tmp="$(mktemp -d)"
-  for image in "$LAB_IMAGE" "$ARTHAS_IMAGE"; do
-    while IFS= read -r node; do
-      [[ -n "$node" ]] || continue
-      node_has_image "$node" "$image" && continue
+  for image in "$@"; do
+    id="$(docker image inspect -f '{{.Id}}' "$image")" \
+      || { rm -rf "$tmp"; echo "Local image $image does not exist; build it first." >&2; return 1; }
+    stale=()
+    for node in "${nodes[@]}"; do
+      node_has_local_image "$node" "$image" "$id" || stale+=("$node")
+    done
+    if (( ${#stale[@]} == 0 )); then
+      echo "    $image is up to date on all ${#nodes[@]} node(s)"
+      continue
+    fi
+    k3d image import -c "$CLUSTER" "$image" || true
+    tarball=""
+    for node in "${stale[@]}"; do
+      node_has_local_image "$node" "$image" "$id" && continue
       echo "    $node is missing $image after k3d image import; loading it with docker save"
-      tarball="$tmp/image.tar"
-      docker save "$image" -o "$tarball"
+      if [[ -z "$tarball" ]]; then
+        tarball="$tmp/image.tar"
+        docker save "$image" -o "$tarball"
+      fi
       docker cp "$tarball" "$node:/tmp/local-image.tar"
       docker exec "$node" ctr -n k8s.io images import /tmp/local-image.tar >/dev/null
       docker exec "$node" rm -f /tmp/local-image.tar >/dev/null 2>&1 || true
-      rm -f "$tarball"
-      node_has_image "$node" "$image" \
+      node_has_local_image "$node" "$image" "$id" \
         || { rm -rf "$tmp"; echo "Could not load $image into $node." >&2; return 1; }
-    done <<<"$(k3d_node_containers)"
+    done
+    rm -f "$tmp/image.tar"
   done
   rm -rf "$tmp"
+}
+
+# --- running checks -----------------------------------------------------------
+# Run check-lab.sh for each lab directory given, <jobs> at a time. For lab NN, the output goes to
+# <outdir>/NN.out and the exit status to <outdir>/NN.rc.
+run_lab_checks() {
+  local root="$1" outdir="$2" max="$3" lab num
+  shift 3
+  for lab in "$@"; do
+    num="$(basename "$lab")"
+    num="${num%%-*}"
+    while (( $(jobs -rp | wc -l) >= max )); do sleep 0.5; done
+    (
+      rc=0
+      "$root/scripts/check-lab.sh" "$num" >"$outdir/$num.out" 2>&1 || rc=$?
+      echo "$rc" >"$outdir/$num.rc"
+    ) &
+  done
+  wait
 }
 
 # --- kubectl context handover -------------------------------------------------

@@ -29,14 +29,14 @@ Images are otherwise pulled on first use. To load them into the cluster up front
 PRELOAD=runtime ./scripts/up.sh    # preload while creating the cluster
 ```
 
-Preloading needs Docker's containerd image store; with the classic store the script says so and skips, and images are pulled on first use. Either way `up.sh` verifies that the locally built Java and Arthas images arrived on every node and loads them with `docker save` when `k3d image import` silently did not.
+Preloading needs Docker's containerd image store; with the classic store the script says so and skips, and images are pulled on first use. Images a node already holds are skipped, so running it again is cheap. Either way `up.sh` verifies that the locally built Java and Arthas images arrived on every node, skips nodes that already hold the same build, and loads them with `docker save` when `k3d image import` silently did not.
 
 
 ## Prerequisites
 
-- Docker
-- k3d 5.x
-- kubectl
+- Docker on a cgroup v2 host (current Docker Desktop, Rancher Desktop, colima and recent Linux distributions all qualify; the pinned k3s release refuses cgroup v1, and `up.sh` stops early if it finds it)
+- k3d 5.x (the Kubernetes version is pinned by `K3S_IMAGE` in `scripts/images.env`, not by the k3d release)
+- kubectl 1.31 or newer (`kubectl debug --custom`, used by Labs 07–11)
 - bash 3.2 or newer (the macOS default works)
 - About 6 GB of Docker memory is comfortable
 
@@ -46,13 +46,13 @@ Preloading needs Docker's containerd image store; with the classic store the scr
 ./scripts/up.sh        # or: make up
 ```
 
-Every lab is deployed by default. Labs 07 and 16 each keep a CPU core busy, so on a small Docker host you can deploy only the labs you are working on:
+Every lab is deployed by default. Labs 07 and 16 each keep half a CPU core busy, so on a small Docker host you can deploy only the labs you are working on:
 
 ```bash
 LABS="01 07" ./scripts/up.sh
 ```
 
-`LABS` is also honoured by `./scripts/reset-all.sh`. The Ingress is published on host port 8080; set `INGRESS_PORT` when creating the cluster to use another port.
+`LABS` is also honoured by `./scripts/reset-all.sh`. When `LABS` leaves out Labs 08 and 10, `up.sh` skips building the 700 MB Arthas debug image; `./scripts/rebuild.sh` builds it later, and `DOJO_ARTHAS=1` forces it. The Ingress is published on host port 8080; set `INGRESS_PORT` when creating the cluster to use another port.
 
 Then:
 
@@ -112,7 +112,7 @@ Command-level test that runs the `LABS.md` debug commands in a disposable cluste
 ./scripts/command-e2e-test.sh   # or: make command-e2e
 ```
 
-Both tests create their own k3d cluster on a separate host port (8180 and 8280) with a private kubeconfig, so they can run while the main dojo is up without touching it or your current kubectl context. They ignore `CLUSTER` and `INGRESS_PORT`; set `E2E_CLUSTER` or `E2E_INGRESS_PORT` to override the test cluster's name or port, and `KEEP_CLUSTER=1` to keep it afterwards. `E2E_LABS="01 07"` limits `e2e-test.sh` to a subset of labs for a faster smoke test. GitHub Actions runs both suites nightly and on demand through the `e2e` workflow.
+Both tests create their own k3d cluster on a separate host port (8180 and 8280) with a private kubeconfig, so they can run while the main dojo is up without touching it or your current kubectl context. They ignore `CLUSTER` and `INGRESS_PORT`; set `E2E_CLUSTER` or `E2E_INGRESS_PORT` to override the test cluster's name or port, and `KEEP_CLUSTER=1` to keep it afterwards. `E2E_LABS="01 07"` limits `e2e-test.sh` to a subset of labs for a faster smoke test; it runs the checks `CHECK_JOBS` (default 4) at a time. GitHub Actions runs both suites nightly and on demand through the `e2e` workflow.
 
 Two k3s clusters at once need more inotify instances than the Docker VM's default of 128. If the second cluster fails to start with `too many open files`, raise the limit (it is reset when the VM restarts), for example on Docker Desktop or Rancher Desktop:
 
@@ -121,7 +121,7 @@ docker run --rm --privileged --pid=host alpine nsenter -t 1 -m -u -n -i \
   sysctl -w fs.inotify.max_user_instances=1024
 ```
 
-Alternatively stop the main dojo with `k3d cluster stop debug-pods-dojo` while a test runs. `LABS.md` has a [troubleshooting table](LABS.md#troubleshooting) for the other common problems.
+Alternatively stop the main dojo with `k3d cluster stop debug-pods-dojo` while a test runs, and resume it with `k3d cluster start debug-pods-dojo` (`./scripts/up.sh` also starts a stopped cluster, but redeploys the broken labs). `LABS.md` has a [troubleshooting table](LABS.md#troubleshooting) for the other common problems.
 
 Destroy:
 

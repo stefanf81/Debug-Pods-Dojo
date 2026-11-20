@@ -460,7 +460,7 @@ Namespace: `dojo-09-java-memory`
 
 Attach early; the lab intentionally keeps allocating.
 
-About ten minutes after each start the heap is exhausted: the JVM writes `/tmp/oome.hprof`, exits, and the kubelet restarts the container (watch the `RESTARTS` column) so the leak starts over. On each restart the app keeps the earlier dump as `/tmp/oome-previous.hprof`, so the newest OutOfMemoryError dump is always `/tmp/oome.hprof`. The restart also ends any ephemeral debug container targeting `app`, because it shares that container's PID namespace, so start a new debug session afterwards. To start from a fresh, small heap, run `./scripts/reset-lab.sh 09`.
+About twelve minutes after each start the heap is exhausted: the JVM writes `/tmp/oome.hprof`, exits, and the kubelet restarts the container (watch the `RESTARTS` column) so the leak starts over. On each restart the app keeps the earlier dump as `/tmp/oome-previous.hprof`, so the newest OutOfMemoryError dump is always `/tmp/oome.hprof`. The restart also ends any ephemeral debug container targeting `app`, because it shares that container's PID namespace, so start a new debug session afterwards. To start from a fresh, small heap, run `./scripts/reset-lab.sh 09`.
 
 ```bash
 jcmd <PID> GC.class_histogram
@@ -844,10 +844,12 @@ You should get a collapsed profile and an HTML flamegraph. The goal is to find t
 |---|---|
 | `./scripts/up.sh` stops with "Host port 8080 is already in use" | Something else listens on the Ingress port. Free it or choose another: `INGRESS_PORT=8081 ./scripts/up.sh`. |
 | A Pod sits in `ErrImagePull` / `ImagePullBackOff` | The registry timed out or rate-limited the node. Load the images once with `./scripts/preload.sh` (or `PRELOAD=runtime ./scripts/up.sh` when creating the cluster); the node then reuses them. |
+| `./scripts/up.sh` stops with "Docker runs on a cgroup v1 host" | The k3s release the dojo pins (Kubernetes 1.35) refuses cgroup v1. Use a Docker host or VM with cgroup v2; `docker info --format '{{.CgroupVersion}}'` shows which one you have. |
 | Cluster creation times out, a node log shows `too many open files` | Docker's VM ran out of inotify instances (default 128; each k3s node uses many). Raise it, e.g. on Docker Desktop / Rancher Desktop: `docker run --rm --privileged --pid=host alpine nsenter -t 1 -m -u -n -i sysctl -w fs.inotify.max_user_instances=1024`. The setting is lost when the VM restarts. |
-| Several Java labs make the machine slow | Labs 07 and 16 each keep a CPU core busy. Deploy only what you are working on: `LABS="01 07" ./scripts/up.sh`. |
+| Several Java labs make the machine slow | Labs 07 and 16 each keep half a CPU core busy. Deploy only what you are working on: `LABS="01 07" ./scripts/up.sh`. |
 | `kubectl top` says metrics are not available | metrics-server needs about a minute after the cluster starts. Retry shortly. |
 | Debug Pods are left over | Remove node debug and checker Pods with `./scripts/clean.sh` (or `make clean`). |
+| You stopped the cluster with `k3d cluster stop` | `k3d cluster start debug-pods-dojo` resumes it as it was. `./scripts/up.sh` also starts a stopped cluster, but it redeploys every lab's broken manifest. |
 | `up.sh` reports labs still starting | Image pulls and the Java start take a while on a cold cluster. Watch with `./scripts/status.sh`, or `kubectl get pods -A --watch`. |
 | You rebuilt the Java image and nothing changed | Running Pods keep the old image. Run `./scripts/rebuild.sh` (or `make rebuild`) to import it and restart the lab Deployments. |
 | `check-lab.sh` reports a check error (exit 2) | The checker's probe Pod could not run, often an image pull problem. Run `CHECK_VERBOSE=1 ./scripts/check-lab.sh <number>` for the probe output. |

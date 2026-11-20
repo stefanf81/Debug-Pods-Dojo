@@ -150,7 +150,7 @@ for script in "$ROOT"/scripts/*.sh; do
   # validate.sh quotes partial image names in its own grep patterns.
   [[ "$(basename "$script")" == validate.sh ]] || consistency_files+=("$script")
 done
-for var in $RUNTIME_IMAGE_VARS $DEBUG_IMAGE_VARS; do
+for var in $RUNTIME_IMAGE_VARS $DEBUG_IMAGE_VARS K3S_IMAGE; do
   value="${!var}"
   [[ "$value" == *@sha256:* ]] || die "scripts/images.env: $var is not pinned by digest: $value"
   repo="${value%%@*}"
@@ -163,6 +163,15 @@ done
 unpinned_lab_images="$(grep -ohE 'image: [^ ,}]+' "$ROOT"/labs/*/*.yaml | sort -u \
   | grep -v '^image: debug-dojo-java:local$' | grep -v '@sha256:[0-9a-f]\{64\}$' || true)"
 [[ -z "$unpinned_lab_images" ]] || die "Lab manifests must pin images by digest: ${unpinned_lab_images//$'\n'/ }"
+
+# check-lab.sh retries the Java fault checks only briefly because `rollout status` waits for the
+# app to answer, which needs a readiness probe on every container that runs the training image.
+for file in "$ROOT"/labs/*/*.yaml; do
+  java="$(grep -oF 'image: debug-dojo-java:local' "$file" | wc -l || true)"
+  probes="$(grep -oF 'readinessProbe: {httpGet: {path: /health, port: 8080}' "$file" | wc -l || true)"
+  (( java == probes )) \
+    || die "${file#"$ROOT"/}: $java container(s) run debug-dojo-java:local but $probes have the /health readinessProbe"
+done
 
 # Every lab must appear in the LABS.md index so a new lab cannot be missed by the guide.
 for lab in "$ROOT"/labs/*; do

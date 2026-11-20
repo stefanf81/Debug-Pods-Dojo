@@ -4,10 +4,7 @@ FROM hengyunabc/arthas@sha256:b707315267e2f015fcf8c086ab50579bdeffdb3d94a949371c
 
 FROM eclipse-temurin:21.0.12.1_1-jdk-jammy@sha256:742daacb9316be4b6fc60258f6e4ac2a11882f6c597373c92290a57bfad0d2e0
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends procps \
-    && rm -rf /var/lib/apt/lists/*
-
+# The Temurin base already ships procps (ps, top), so no package installation is needed.
 COPY --from=arthas /opt/arthas /opt/arthas
 
 ENV PATH="/opt/java/openjdk/bin:${PATH}"

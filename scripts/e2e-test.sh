@@ -14,6 +14,10 @@ else
   unset LABS
 fi
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
+# The checks never use the Arthas debug image, so do not build and import it (about 700 MB).
+export DOJO_ARTHAS="${DOJO_ARTHAS:-0}"
+JOBS="${CHECK_JOBS:-4}"
+[[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || { echo "CHECK_JOBS must be a positive integer (got '$JOBS')" >&2; exit 2; }
 # A private kubeconfig keeps cluster creation and `use-context` away from the learner's current context.
 E2E_KUBECONFIG_DIR="$(mktemp -d)"
 export KUBECONFIG="$E2E_KUBECONFIG_DIR/config"
@@ -28,7 +32,9 @@ while IFS= read -r lab; do
 done <<<"$lab_list"
 (( ${#labs[@]} > 0 )) || { echo "No labs selected (E2E_LABS='${E2E_LABS:-}')" >&2; exit 2; }
 
+results="$(mktemp -d)"
 cleanup() {
+  rm -rf "$results"
   forget_previous_context
   if [[ "$KEEP_CLUSTER" == "1" ]]; then
     echo "Kept cluster $CLUSTER; use it with: export KUBECONFIG=$KUBECONFIG"
@@ -46,25 +52,41 @@ done
 k3d cluster delete "$CLUSTER" >/dev/null 2>&1 || true
 "$ROOT/scripts/up.sh"
 
-# check-lab.sh exits 1 for "not fixed yet" and 2 when the check itself could not run.
-echo "==> Broken-state reference checks"
-for lab in "${labs[@]}"; do
-  number="$(basename "$lab")"; number="${number%%-*}"
-  rc=0
-  out="$("$ROOT/scripts/check-lab.sh" "$number" 2>&1)" || rc=$?
-  case "$rc" in
-    1) ;;
-    0) echo "Broken scenario unexpectedly passed: $(basename "$lab")" >&2; exit 1 ;;
-    *) printf '%s\n' "$out" >&2; echo "Checker could not evaluate broken scenario $(basename "$lab") (exit $rc)" >&2; exit 1 ;;
-  esac
-done
+# Check every lab, CHECK_JOBS at a time, and expect exit status <expected> from each. check-lab.sh
+# exits 0 when fixed, 1 when not fixed yet and 2 when the check itself could not run. Every
+# unexpected result is reported before the test fails.
+check_phase() {
+  local expected="$1" started=$SECONDS lab name number rc failed=0
+  rm -f "$results"/*
+  run_lab_checks "$ROOT" "$results" "$JOBS" "${labs[@]}"
+  for lab in "${labs[@]}"; do
+    name="$(basename "$lab")"
+    number="${name%%-*}"
+    rc="$(cat "$results/$number.rc" 2>/dev/null || echo missing)"
+    [[ "$rc" == "$expected" ]] && continue
+    failed=$((failed + 1))
+    sed 's/^/    /' "$results/$number.out" >&2 2>/dev/null || true
+    if [[ "$expected" == 1 && "$rc" == 0 ]]; then
+      echo "Broken scenario unexpectedly passed: $name" >&2
+    elif [[ "$expected" == 1 ]]; then
+      echo "Checker could not evaluate broken scenario $name (exit $rc)" >&2
+    else
+      echo "Reference repair did not pass: $name (exit $rc)" >&2
+    fi
+  done
+  echo "    ${#labs[@]} labs checked in $((SECONDS - started))s"
+  (( failed == 0 )) || exit 1
+}
 
+echo "==> Broken-state reference checks"
+check_phase 1
+
+# Apply every reference repair first so the rollouts run concurrently, then check them together.
 echo "==> Reference repair checks"
 for lab in "${labs[@]}"; do
   number="$(basename "$lab")"; number="${number%%-*}"
   "$ROOT/scripts/solve-lab.sh" "$number" >/dev/null
-  out="$("$ROOT/scripts/check-lab.sh" "$number" 2>&1)" \
-    || { printf '%s\n' "$out" >&2; echo "Reference repair did not pass: $(basename "$lab")" >&2; exit 1; }
 done
+check_phase 0
 
 echo "E2E reference-state test: PASS (${#labs[@]} labs)"

@@ -22,10 +22,28 @@ preflight() {
     exit 1
   fi
 
+  # The kubelet of the pinned k3s release refuses to start on cgroup v1, and k3d only reports that
+  # after its node wait times out (5 minutes per attempt), so stop here instead.
+  if [[ "$(docker info --format '{{.CgroupVersion}}' 2>/dev/null)" == "1" ]]; then
+    cat >&2 <<'MSG'
+Docker runs on a cgroup v1 host. The k3s release the dojo uses (Kubernetes 1.35) refuses cgroup v1,
+so the cluster nodes would never become ready. Use a host or Docker VM with cgroup v2: current
+Docker Desktop, Rancher Desktop, colima and Linux distributions from the last few years all use it.
+MSG
+    exit 1
+  fi
+
   local mem_gib
   mem_gib="$(docker info --format '{{.MemTotal}}' 2>/dev/null | awk '{printf "%d", $1 / 1073741824}')"
   if [[ "$mem_gib" =~ ^[0-9]+$ ]] && (( mem_gib > 0 && mem_gib < 6 )); then
     echo "Warning: Docker reports ${mem_gib} GiB of memory; about 6 GiB is recommended for all labs." >&2
+  fi
+
+  # `kubectl debug --custom`, which Labs 07-11 use, is available by default from kubectl 1.31.
+  local kubectl_minor
+  kubectl_minor="$(kubectl version --client -o json 2>/dev/null | sed -n 's/.*"minor": *"\([0-9]*\).*/\1/p' | head -n 1)"
+  if [[ "$kubectl_minor" =~ ^[0-9]+$ ]] && (( kubectl_minor < 31 )); then
+    echo "Warning: kubectl 1.${kubectl_minor} lacks 'kubectl debug --custom', which Labs 07-11 use; install kubectl 1.31 or newer." >&2
   fi
 }
 
@@ -46,6 +64,11 @@ while IFS= read -r lab; do
 done <<<"$lab_list"
 (( ${#labs[@]} > 0 )) || { echo "No labs selected (LABS='${LABS:-}')" >&2; exit 2; }
 
+images=()
+while IFS= read -r image; do
+  images+=("$image")
+done <<<"$(local_images)"
+
 wait_deployment() {
   local namespace="$1" name="$2" deadline=$((SECONDS + 180))
   echo "    waiting for ${namespace}/deployment/${name}"
@@ -58,14 +81,44 @@ wait_deployment() {
   kubectl --context "$CONTEXT" -n "$namespace" rollout status deployment/"$name" --timeout=180s
 }
 
-# Print the end of each node container's log. k3d's own error only says a node "failed to get
-# ready"; the reason (a crash-looping k3s agent, a resource limit) is in the container log.
+# The distinct error lines of a k3s node log (read on stdin), oldest first, with a repeat count;
+# lines that differ only in numbers (timestamps, ports, PIDs) count as the same. A node that fails
+# usually retries the same request every two seconds, so the plain end of the log is one repeated
+# line and the cause, logged once at start-up, is far above it. Without error lines, the distinct
+# lines of the last 40 are shown instead.
+summarize_node_log() {
+  awk '
+    function add(line, kind,   key) {
+      sub(/^time="[^"]*" /, "", line)
+      sub(/^[EFW][0-9][0-9][0-9][0-9] [0-9:.]+ +[0-9]+ /, "", line)
+      line = substr(line, 1, 300)
+      key = line
+      gsub(/[0-9]+/, "#", key)
+      if (!((kind, key) in count)) { n[kind]++; order[kind, n[kind]] = key; text[kind, key] = line }
+      count[kind, key]++
+    }
+    { last[NR % 40] = $0 }
+    /level=(error|fatal)|^[EF][0-9][0-9][0-9][0-9] |^Error|panic:/ { add($0, "err") }
+    END {
+      kind = "err"
+      if (!n["err"]) { kind = "tail"; for (i = (NR > 40 ? NR - 39 : 1); i <= NR; i++) add(last[i % 40], kind) }
+      first = n[kind] > 15 ? n[kind] - 14 : 1
+      if (first > 1) print "(" first - 1 " earlier distinct lines omitted)"
+      for (i = first; i <= n[kind]; i++) {
+        key = order[kind, i]
+        print text[kind, key] (count[kind, key] > 1 ? "   [x" count[kind, key] "]" : "")
+      }
+    }'
+}
+
+# Print the distinct errors of each node container's log. k3d's own error only says a node "failed
+# to get ready"; the reason (a crash-looping k3s agent, a resource limit) is in the container log.
 dump_node_logs() {
   local node
   while IFS= read -r node; do
     [[ -n "$node" ]] || continue
     echo "----- $node ($(docker inspect -f '{{.State.Status}}, restarts={{.RestartCount}}' "$node" 2>/dev/null || echo unknown)) -----" >&2
-    docker logs --tail 40 "$node" 2>&1 | sed 's/^/    /' >&2 || true
+    docker logs "$node" 2>&1 | summarize_node_log | sed 's/^/    /' >&2 || true
   done <<<"$(docker ps -a --filter "label=k3d.cluster=$CLUSTER" --format '{{.Names}}' 2>/dev/null | sort)"
 }
 
@@ -78,6 +131,7 @@ create_cluster() {
   while :; do
     echo "==> Creating 1-server + 2-agent k3d cluster (Ingress on host port $INGRESS_PORT)"
     if k3d cluster create "$CLUSTER" \
+      --image "$K3S_IMAGE" \
       --servers 1 \
       --agents 2 \
       --port "${INGRESS_PORT}:80@loadbalancer" \
@@ -95,7 +149,15 @@ create_cluster() {
   done
 }
 
-build_local_images "$ROOT"
+build_local_images "$ROOT" "${images[@]}"
+if [[ " ${images[*]} " != *" $ARTHAS_IMAGE "* ]]; then
+  if [[ "${DOJO_ARTHAS:-auto}" == 0 || "${DOJO_ARTHAS:-auto}" == no ]]; then
+    echo "==> Skipping the Arthas debug image (DOJO_ARTHAS=${DOJO_ARTHAS})"
+  else
+    echo "==> Skipping the Arthas debug image: the selected labs do not include 08 or 10"
+    echo "    (./scripts/rebuild.sh builds and imports it later; DOJO_ARTHAS=1 forces it here)"
+  fi
+fi
 
 # Capture the pre-dojo context before k3d creates the cluster and switches to it.
 remember_previous_context
@@ -103,6 +165,12 @@ remember_previous_context
 if k3d cluster get "$CLUSTER" >/dev/null 2>&1; then
   echo "==> k3d cluster '$CLUSTER' already exists"
   echo "    (running Pods keep their current image; use ./scripts/rebuild.sh to roll out a rebuilt Java image)"
+  # `k3d cluster stop` leaves the containers in place; importing into them and waiting for the
+  # cluster would otherwise fail only after the component timeouts below.
+  if (( $(k3d_stopped_node_count) > 0 )); then
+    echo "==> Starting the stopped cluster"
+    k3d cluster start "$CLUSTER" --wait --timeout "${CLUSTER_START_TIMEOUT:-300}s"
+  fi
 else
   if port_is_listening "$INGRESS_PORT"; then
     echo "Host port ${INGRESS_PORT} is already in use. Stop the process using it or set INGRESS_PORT=<port>." >&2
@@ -111,8 +179,8 @@ else
   create_cluster
 fi
 
-echo "==> Importing local Java and Arthas debug images"
-import_local_images
+echo "==> Importing local images into the nodes"
+import_local_images "${images[@]}"
 
 # Optional: load the third-party images into the nodes now instead of pulling them on first use.
 #   PRELOAD=runtime  only the images the lab workloads and the checker probe run
@@ -130,16 +198,18 @@ if ! context_exists "$CONTEXT"; then
 fi
 kubectl config use-context "$CONTEXT" >/dev/null
 
-echo "==> Waiting for K3s packaged components used by the labs"
-wait_deployment kube-system coredns
-wait_deployment kube-system metrics-server
-wait_deployment kube-system traefik
-
+# Apply the labs first so their image pulls and JVM starts overlap with K3s installing Traefik and
+# metrics-server. Nothing in the lab manifests needs those components to exist when it is created.
 echo "==> Deploying ${#labs[@]} debug-pod-focused scenarios"
 for lab in "${labs[@]}"; do
   echo "    $(basename "$lab")"
   kubectl --context "$CONTEXT" apply -f "$lab/broken.yaml" >/dev/null
 done
+
+echo "==> Waiting for K3s packaged components used by the labs"
+wait_deployment kube-system coredns
+wait_deployment kube-system metrics-server
+wait_deployment kube-system traefik
 
 # Deployments created above start asynchronously (image pulls, JVM start-up). Wait a bounded time so
 # "ready" means ready; the Deployment that is broken on purpose (lab 14's victim) is excluded.

@@ -17,8 +17,9 @@ spec:
         - name: app
           image: debug-dojo-java:local
           imagePullPolicy: IfNotPresent
+          readinessProbe: {httpGet: {path: /health, port: 8080}, periodSeconds: 2, timeoutSeconds: 3}
           env: [{name: DOJO_MODE, value: normal}]
           resources:
             requests: {cpu: 50m, memory: 64Mi}
-            limits: {cpu: "1", memory: 256Mi}
+            limits: {cpu: 500m, memory: 256Mi}
           ports: [{containerPort: 8080}]

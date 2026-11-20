@@ -14,6 +14,8 @@ spec:
     metadata: {labels: {app: port-holder}}
     spec:
       hostNetwork: true
+      # busybox httpd ignores SIGTERM as PID 1; do not wait the default 30s on every reset.
+      terminationGracePeriodSeconds: 2
       containers:
         - name: holder
           image: busybox:1.37@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
@@ -35,6 +37,8 @@ spec:
             - labelSelector: {matchLabels: {app: port-holder}}
               topologyKey: kubernetes.io/hostname
       hostNetwork: true
+      # busybox httpd ignores SIGTERM as PID 1; do not wait the default 30s on every reset.
+      terminationGracePeriodSeconds: 2
       containers:
         - name: victim
           image: busybox:1.37@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec

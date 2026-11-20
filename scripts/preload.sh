@@ -54,11 +54,39 @@ containerd_base_name() {
   printf 'docker.io/%s\n' "$repo"
 }
 
+# One listing per node up front: images a node already holds under repo@digest are skipped.
+for node in "${nodes[@]}"; do
+  docker exec "$node" ctr -n k8s.io images ls -q >"$tmp/$node.refs" 2>/dev/null || : >"$tmp/$node.refs"
+done
+
+# Copy the tarball into one node, import it and verify kubelet can resolve repo@digest there.
+import_into_node() {
+  local node="$1" tarball="$2" base="$3" digest="$4"
+  docker cp "$tarball" "$node:/tmp/preload-image.tar" >/dev/null
+  docker exec "$node" ctr -n k8s.io images import --base-name "$base" --digests /tmp/preload-image.tar >/dev/null 2>&1 \
+    && docker exec "$node" ctr -n k8s.io images ls -q 2>/dev/null | grep -xF -- "$base@$digest" >/dev/null
+  local rc=$?
+  docker exec "$node" rm -f /tmp/preload-image.tar >/dev/null 2>&1 || true
+  return "$rc"
+}
+
 count=0
+skipped=0
 unverified=0
 for var in $vars; do
   image="${!var}"
   count=$((count + 1))
+  base="$(containerd_base_name "$image")"
+  digest="${image##*@}"
+  missing=()
+  for node in "${nodes[@]}"; do
+    grep -xF -- "$base@$digest" "$tmp/$node.refs" >/dev/null || missing+=("$node")
+  done
+  if (( ${#missing[@]} == 0 )); then
+    echo "==> [$count] on all nodes    $image"
+    skipped=$((skipped + 1))
+    continue
+  fi
   if docker image inspect "$image" >/dev/null 2>&1; then
     echo "==> [$count] cached on host  $image"
   else
@@ -67,20 +95,18 @@ for var in $vars; do
   fi
   tarball="$tmp/image.tar"
   docker save "$image" -o "$tarball"
-  base="$(containerd_base_name "$image")"
-  digest="${image##*@}"
-  for node in "${nodes[@]}"; do
-    docker cp "$tarball" "$node:/tmp/preload-image.tar"
-    # Kubelet only reuses the image when the node knows it under repo@digest, so verify that and
-    # treat anything else as a warning: the image is then simply pulled on first use.
-    if docker exec "$node" ctr -n k8s.io images import --base-name "$base" --digests /tmp/preload-image.tar >/dev/null 2>&1 \
-      && docker exec "$node" ctr -n k8s.io images ls -q 2>/dev/null | grep -xF -- "$base@$digest" >/dev/null; then
-      :
-    else
+  # Import into the nodes that lack it in parallel; each records its result for the summary below.
+  # Kubelet only reuses the image when the node knows it under repo@digest, so anything else is a
+  # warning: the image is then simply pulled on first use.
+  for node in "${missing[@]}"; do
+    ( if import_into_node "$node" "$tarball" "$base" "$digest"; then echo ok; else echo failed; fi >"$tmp/$node.result" ) &
+  done
+  wait
+  for node in "${missing[@]}"; do
+    if [[ "$(cat "$tmp/$node.result" 2>/dev/null)" != ok ]]; then
       echo "    warning: $node cannot resolve $base@$digest after import" >&2
       unverified=$((unverified + 1))
     fi
-    docker exec "$node" rm -f /tmp/preload-image.tar >/dev/null 2>&1 || true
   done
   rm -f "$tarball"
 done
@@ -88,5 +114,5 @@ done
 if (( unverified > 0 )); then
   echo "Preloaded $count image(s), but $unverified node import(s) could not be verified; kubelet will pull those on first use." >&2
 else
-  echo "Preloaded $count image(s) into ${#nodes[@]} node(s)."
+  echo "Preloaded $count image(s) into ${#nodes[@]} node(s) ($skipped already present on every node)."
 fi

@@ -31,14 +31,33 @@ reaches_backend() {
 }
 
 # The training app lists its live dojo-* fault threads on /stats; an empty list means normal mode.
+# The Java Deployments have a readiness probe, so once `ready` returns the app answers and its fault
+# mode cannot change any more: a second attempt only covers a transient network error.
 fault_threads_stopped() {
   local deploy="$1" ips ip
   ready "$deploy"
   ips="$(pod_ips "$ns" "app=$deploy")"
   [[ -n "$ips" ]] || return 1
   for ip in $ips; do
-    probe "$ns" "curl -fsS --max-time 3 http://$ip:8080/stats | grep -qx 'dojoThreads='" || return 1
+    probe "$ns" "curl -fsS --max-time 3 http://$ip:8080/stats | grep -qx 'dojoThreads='" 2 || return 1
   done
+}
+
+# True when the scheduler rejected a Pod of the victim Deployment's current revision. Pods of an
+# older revision are ignored, so a repair that is still rolling out is not mistaken for a failure.
+victim_unschedulable() {
+  local k=(kubectl --context "$DOJO_CONTEXT" -n "$ns") out gen observed rev hash
+  out="$("${k[@]}" get deployment victim -o jsonpath='{.metadata.generation} {.status.observedGeneration} {.metadata.annotations.deployment\.kubernetes\.io/revision}' 2>/dev/null)" || return 1
+  read -r gen observed rev <<<"$out"
+  # Until the controller has seen the latest spec, the revision annotation may still be the old one.
+  [[ -n "$rev" && "$gen" == "$observed" ]] || return 1
+  hash="$("${k[@]}" get replicasets -l app=victim \
+    -o jsonpath='{range .items[*]}{.metadata.annotations.deployment\.kubernetes\.io/revision} {.metadata.labels.pod-template-hash}{"\n"}{end}' 2>/dev/null \
+    | awk -v rev="$rev" '$1 == rev {print $2; exit}')"
+  [[ -n "$hash" ]] || return 1
+  "${k[@]}" get pods -l "app=victim,pod-template-hash=$hash" \
+    -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="PodScheduled")].reason}{"\n"}{end}' 2>/dev/null \
+    | grep -qx Unschedulable
 }
 
 case "$num" in
@@ -88,7 +107,7 @@ case "$num" in
   09) fault_threads_stopped api && pass || fail "the dojo-memory-leak thread is still retaining memory" ;;
   10)
     ready api
-    probe "$ns" 'curl -fsS --max-time 1 http://api:8080/slow >/dev/null' \
+    probe "$ns" 'curl -fsS --max-time 1 http://api:8080/slow >/dev/null' 2 \
       && pass || fail "/slow still takes longer than 1 second"
     ;;
   11)
@@ -121,11 +140,18 @@ case "$num" in
   13) fault_threads_stopped writer && pass || fail "the periodic dojo-pvc-writer is still running" ;;
   14)
     wait_rollout "$ns" port-holder || fail "keep port-holder running; move the victim instead"
-    wait_rollout "$ns" victim && pass || fail "victim still cannot schedule; its host port conflicts with a listener on the node"
+    # The broken victim never schedules, so do not spend the whole CHECK_TIMEOUT waiting for it:
+    # stop as soon as the scheduler has rejected a Pod of the current revision.
+    deadline=$((SECONDS + CHECK_TIMEOUT))
+    until kubectl --context "$DOJO_CONTEXT" -n "$ns" rollout status deployment/victim --timeout=2s >/dev/null 2>&1; do
+      victim_unschedulable && fail "victim still cannot schedule; its host port conflicts with a listener on the node"
+      (( SECONDS < deadline )) || fail "victim is not rolled out and ready yet"
+    done
+    pass
     ;;
   15)
     ready api
-    probe "$ns" 'curl -fsS --max-time 0.3 http://api:8080/slow >/dev/null' \
+    probe "$ns" 'curl -fsS --max-time 0.3 http://api:8080/slow >/dev/null' 2 \
       && pass || fail "/slow still takes longer than 300 ms"
     ;;
   16) fault_threads_stopped api && pass || fail "the dojo-cpu-burner thread is still running" ;;

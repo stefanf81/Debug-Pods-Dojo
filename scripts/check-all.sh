@@ -30,17 +30,7 @@ for lab in "${labs[@]}"; do
   fi
 done
 
-for lab in ${to_check[@]+"${to_check[@]}"}; do
-  name="$(basename "$lab")"
-  num="${name%%-*}"
-  while (( $(jobs -rp | wc -l) >= JOBS )); do sleep 0.5; done
-  (
-    rc=0
-    "$ROOT/scripts/check-lab.sh" "$num" >"$tmp/$num.out" 2>&1 || rc=$?
-    echo "$rc" >"$tmp/$num.rc"
-  ) &
-done
-wait
+run_lab_checks "$ROOT" "$tmp" "$JOBS" ${to_check[@]+"${to_check[@]}"}
 
 printf '%-4s %-34s %s\n' "LAB" "NAME" "RESULT"
 printf '%-4s %-34s %s\n' "---" "----" "------"

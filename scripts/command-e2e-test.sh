@@ -8,6 +8,8 @@ export CLUSTER="${E2E_CLUSTER:-debug-pods-dojo-command-e2e}"
 # Use a separate host port so the test can run while the main dojo cluster is up.
 export INGRESS_PORT="${E2E_INGRESS_PORT:-8280}"
 unset LABS
+# Labs 08 and 10 run the Arthas debug image, so always build and import it.
+export DOJO_ARTHAS=1
 CONTEXT="k3d-${CLUSTER}"
 KEEP_CLUSTER="${KEEP_CLUSTER:-0}"
 # A private kubeconfig keeps cluster creation and `use-context` away from the learner's current context.
@@ -244,7 +246,7 @@ if run_ephemeral dojo-08-java-deadlock "$p" app cmd08arthas debug-dojo-arthas-jd
   pass "08 Arthas boot/batch attach + thread commands"
 else fail "08 Arthas deadlock commands"; fi
 
-# 09 - Heap diagnostics. The JVM exits on OOM about ten minutes after start, so reset the lab
+# 09 - Heap diagnostics. The JVM exits on OOM about twelve minutes after start, so reset the lab
 # first to give this check a fresh heap regardless of how long the earlier checks took.
 "$ROOT/scripts/reset-lab.sh" 09 >/dev/null
 wait_deploy dojo-09-java-memory api

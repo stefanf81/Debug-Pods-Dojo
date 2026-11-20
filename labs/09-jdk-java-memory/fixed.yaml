@@ -18,10 +18,11 @@ spec:
         - name: app
           image: debug-dojo-java:local
           imagePullPolicy: IfNotPresent
+          readinessProbe: {httpGet: {path: /health, port: 8080}, periodSeconds: 2, timeoutSeconds: 3}
           env:
             - {name: DOJO_MODE, value: normal}
             - {name: LEAK_CHUNK_MIB, value: "1"}
-            - {name: LEAK_DELAY_MS, value: "3000"}
+            - {name: LEAK_DELAY_MS, value: "4000"}
             - {name: JAVA_TOOL_OPTIONS, value: "-Xms64m -Xmx192m -XX:NativeMemoryTracking=summary -XX:+HeapDumpOnOutOfMemoryError -XX:+ExitOnOutOfMemoryError -XX:HeapDumpPath=/tmp/oome.hprof"}
           resources:
             requests: {cpu: 20m, memory: 96Mi}
