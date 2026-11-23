@@ -149,6 +149,26 @@ create_cluster() {
   done
 }
 
+# Start a stopped cluster, retrying once from a clean stop when a node fails to come back. k3d
+# sometimes reports the load balancer (an nginx container) as "restarting" and never ready right
+# after a restart; the same cluster starts fine a moment later, so print the node logs for the
+# record, stop everything and try again before giving up.
+start_cluster() {
+  local attempt=1 attempts="${CLUSTER_START_ATTEMPTS:-2}"
+  while :; do
+    if k3d cluster start "$CLUSTER" --wait --timeout "${CLUSTER_START_TIMEOUT:-300}s"; then
+      return 0
+    fi
+    echo "Cluster start failed (attempt $attempt of $attempts). Node container logs:" >&2
+    dump_node_logs
+    (( attempt < attempts )) || { echo "Could not start k3d cluster '$CLUSTER'." >&2; exit 1; }
+    attempt=$((attempt + 1))
+    k3d cluster stop "$CLUSTER" >/dev/null 2>&1 || true
+    sleep 5
+    echo "==> Starting the stopped cluster (attempt $attempt of $attempts)"
+  done
+}
+
 build_local_images "$ROOT" "${images[@]}"
 if [[ " ${images[*]} " != *" $ARTHAS_IMAGE "* ]]; then
   if [[ "${DOJO_ARTHAS:-auto}" == 0 || "${DOJO_ARTHAS:-auto}" == no ]]; then
@@ -169,7 +189,7 @@ if k3d cluster get "$CLUSTER" >/dev/null 2>&1; then
   # cluster would otherwise fail only after the component timeouts below.
   if (( $(k3d_stopped_node_count) > 0 )); then
     echo "==> Starting the stopped cluster"
-    k3d cluster start "$CLUSTER" --wait --timeout "${CLUSTER_START_TIMEOUT:-300}s"
+    start_cluster
   fi
 else
   if port_is_listening "$INGRESS_PORT"; then
