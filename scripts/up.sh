@@ -149,14 +149,45 @@ create_cluster() {
   done
 }
 
-# Start a stopped cluster, retrying once from a clean stop when a node fails to come back. k3d
-# sometimes reports the load balancer (an nginx container) as "restarting" and never ready right
-# after a restart; the same cluster starts fine a moment later, so print the node logs for the
-# record, stop everything and try again before giving up.
+# Wait until every node container of $CLUSTER is up and stays up. `k3d cluster start --wait` can
+# return while a node container is still in Docker's restart loop (a k3s agent or the nginx load
+# balancer that started before its peers were reachable, exiting and being restarted by Docker);
+# importing images then fails with "container is restarting" or a missing containerd socket. A node
+# counts as ready when it is running, its container did not restart during two checks 3 s apart
+# and, for servers and agents, containerd's socket exists.
+wait_nodes_stable() {
+  local deadline=$((SECONDS + ${1:-120})) snapshot previous="" node role ok
+  while (( SECONDS < deadline )); do
+    ok=1
+    snapshot=""
+    while IFS=' ' read -r node role; do
+      [[ -n "$node" ]] || continue
+      snapshot+="$node $(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$node" 2>/dev/null) "
+      if [[ "$(docker inspect -f '{{.State.Status}}' "$node" 2>/dev/null)" != running ]]; then
+        ok=0
+      elif [[ "$role" != loadbalancer ]] \
+        && ! docker exec "$node" test -S /run/k3s/containerd/containerd.sock >/dev/null 2>&1; then
+        ok=0
+      fi
+    done <<<"$(docker ps -a --filter "label=k3d.cluster=$CLUSTER" --format '{{.Names}} {{.Label "k3d.role"}}' | sort)"
+    # Ready on two consecutive checks with an unchanged status and restart count.
+    if (( ok )) && [[ "$snapshot" == "$previous" ]]; then return 0; fi
+    previous=""
+    (( ! ok )) || previous="$snapshot"
+    sleep 3
+  done
+  return 1
+}
+
+# Start a stopped cluster, retrying once from a clean stop when a node fails to come back. After a
+# restart k3d sometimes reports the load balancer as "restarting" and never ready, or returns while
+# k3s agents are still crash-looping; the same cluster starts fine a moment later. Print the node
+# logs for the record, stop everything and try again before giving up.
 start_cluster() {
   local attempt=1 attempts="${CLUSTER_START_ATTEMPTS:-2}"
   while :; do
-    if k3d cluster start "$CLUSTER" --wait --timeout "${CLUSTER_START_TIMEOUT:-300}s"; then
+    if k3d cluster start "$CLUSTER" --wait --timeout "${CLUSTER_START_TIMEOUT:-300}s" \
+      && wait_nodes_stable "${CLUSTER_STABLE_TIMEOUT:-120}"; then
       return 0
     fi
     echo "Cluster start failed (attempt $attempt of $attempts). Node container logs:" >&2
