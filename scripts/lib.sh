@@ -172,6 +172,13 @@ k3d_node_containers() {
   done
 }
 
+# Port bindings of the $CLUSTER load balancer (the Ingress and the Kubernetes API) that are not on
+# 127.0.0.1, one "<port>/tcp -> <address>:<port>" per line; nothing when every binding is local or
+# the load balancer is not running. up.sh creates the cluster with localhost-only bindings.
+published_beyond_localhost() {
+  docker port "k3d-${CLUSTER}-serverlb" 2>/dev/null | grep -v -- '-> 127\.0\.0\.1:' || true
+}
+
 # Number of k3d server/agent containers of $CLUSTER that exist but are not running (a stopped cluster).
 k3d_stopped_node_count() {
   local all running

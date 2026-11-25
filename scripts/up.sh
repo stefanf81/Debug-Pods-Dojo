@@ -126,15 +126,20 @@ dump_node_logs() {
 # containers so their logs can be printed before the cluster is deleted; without it k3d deletes
 # them first and the cause is lost. One retry covers a node that fails once at start-up (a k3s
 # agent crash-looped on a CI runner while the same commit passed on other runners).
+# The Ingress and the Kubernetes API are published on 127.0.0.1 only. The dojo runs privileged and
+# node-level debug Pods, so anyone on the network who reached its API (k3d's default binds it to every
+# interface) could take over the host. `127.0.0.1:random` keeps k3d's random API port; `:0` would
+# write an unusable https://127.0.0.1:0 into the kubeconfig.
 create_cluster() {
   local attempt=1 attempts="${CLUSTER_CREATE_ATTEMPTS:-2}"
   while :; do
-    echo "==> Creating 1-server + 2-agent k3d cluster (Ingress on host port $INGRESS_PORT)"
+    echo "==> Creating 1-server + 2-agent k3d cluster (Ingress on 127.0.0.1:$INGRESS_PORT)"
     if k3d cluster create "$CLUSTER" \
       --image "$K3S_IMAGE" \
       --servers 1 \
       --agents 2 \
-      --port "${INGRESS_PORT}:80@loadbalancer" \
+      --api-port "127.0.0.1:random" \
+      --port "127.0.0.1:${INGRESS_PORT}:80@loadbalancer" \
       --wait \
       --timeout "${CLUSTER_START_TIMEOUT:-300}s" \
       --no-rollback; then
@@ -231,6 +236,16 @@ else
     exit 1
   fi
   create_cluster
+fi
+
+# A cluster created before up.sh bound the load balancer to localhost still publishes the Ingress
+# and the Kubernetes API on every interface. Its published ports cannot change in place, so warn
+# rather than fail: recreating it also redeploys the broken scenarios over any repairs in progress.
+exposed="$(published_beyond_localhost)"
+if [[ -n "$exposed" ]]; then
+  echo "WARNING: cluster '$CLUSTER' publishes ports beyond localhost, so they are reachable from your network:" >&2
+  printf '%s\n' "$exposed" | sed 's/^/    /' >&2
+  echo "    Recreate it to bind them to 127.0.0.1 (this redeploys every lab): ./scripts/down.sh && ./scripts/up.sh" >&2
 fi
 
 echo "==> Importing local images into the nodes"

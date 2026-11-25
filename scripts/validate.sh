@@ -131,6 +131,12 @@ need_text "$CMD_E2E" 'wait --for=condition=Ready pod/cmd03allow' "Lab 03 E2E mus
 need_text "$CMD_E2E" 'metadata.labels.access' "Lab 03 E2E must verify the access label"
 need_text "$CMD_E2E" 'seq 1 30' "Lab 03 E2E must retry during NetworkPolicy convergence"
 
+echo "==> Localhost-only cluster guardrails"
+# The dojo runs privileged and node-level debug Pods; k3d would otherwise publish the Kubernetes API
+# and the Ingress on every interface.
+need_text "$ROOT/scripts/up.sh" '--api-port "127.0.0.1:random"' "up.sh must bind the Kubernetes API to 127.0.0.1"
+need_text "$ROOT/scripts/up.sh" '--port "127.0.0.1:${INGRESS_PORT}:80@loadbalancer"' "up.sh must bind the Ingress to 127.0.0.1"
+
 echo "==> Image pinning guardrails"
 for dockerfile in "$ROOT"/images/*/Dockerfile; do
   while read -r from; do

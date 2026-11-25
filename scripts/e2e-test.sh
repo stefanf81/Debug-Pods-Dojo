@@ -52,6 +52,14 @@ done
 k3d cluster delete "$CLUSTER" >/dev/null 2>&1 || true
 "$ROOT/scripts/up.sh"
 
+echo "==> Ingress and Kubernetes API published on localhost only"
+exposed="$(published_beyond_localhost)"
+[[ -z "$exposed" ]] || { printf '%s\n' "$exposed" >&2; echo "up.sh published ports beyond 127.0.0.1" >&2; exit 1; }
+[[ -n "$(docker port "k3d-${CLUSTER}-serverlb" 2>/dev/null)" ]] \
+  || { echo "The load balancer k3d-${CLUSTER}-serverlb publishes no ports" >&2; exit 1; }
+server="$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+[[ "$server" == https://127.0.0.1:* ]] || { echo "kubeconfig points at $server, expected https://127.0.0.1:<port>" >&2; exit 1; }
+
 # Check every lab, CHECK_JOBS at a time, and expect exit status <expected> from each. check-lab.sh
 # exits 0 when fixed, 1 when not fixed yet and 2 when the check itself could not run. Every
 # unexpected result is reported before the test fails.
