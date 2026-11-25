@@ -5,7 +5,8 @@ source "$ROOT/scripts/lib.sh"
 require_dojo_context
 
 # Check every deployed lab against its success condition. The exit status mirrors check-lab.sh:
-# 0 every deployed lab passes, 1 at least one is not fixed yet, 2 at least one check could not run.
+# 0 every deployed lab passes, 1 at least one is not fixed yet, 2 at least one check could not run
+# or none of the selected labs is deployed.
 # Checks run in parallel (CHECK_JOBS at a time, default 4) because a broken lab spends its whole
 # retry budget before it fails; results are printed in lab order.
 JOBS="${CHECK_JOBS:-4}"
@@ -75,6 +76,11 @@ summary="${passed} passed, ${not_fixed} not fixed, ${errors} check error(s), ${s
 if (( errors > 0 )); then
   echo "Result: ${summary}" >&2
   echo "Run a failing lab directly with: CHECK_VERBOSE=1 ./scripts/check-lab.sh <lab>" >&2
+  exit 2
+elif (( passed + not_fixed == 0 )); then
+  # Nothing was checked, so nothing passed: do not report success.
+  echo "Result: ${summary}" >&2
+  echo "None of the selected labs is deployed. Deploy them with ./scripts/up.sh or ./scripts/reset-lab.sh <number>." >&2
   exit 2
 elif (( not_fixed > 0 )); then
   echo "Result: ${summary}"

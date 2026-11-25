@@ -78,7 +78,7 @@ Check every deployed lab at once:
 ./scripts/check-all.sh      # or: make check-all
 ```
 
-It runs four checks in parallel (`CHECK_JOBS=8` to change that), prints one result per lab in order, and exits 0 when everything passes, 1 when a lab is not fixed yet and 2 when a check could not run.
+It runs four checks in parallel (`CHECK_JOBS=8` to change that), prints one result per lab in order, and exits 0 when everything passes, 1 when a lab is not fixed yet and 2 when a check could not run or none of the selected labs is deployed.
 
 The checker tests the lab's success condition rather than comparing your manifest with `fixed.yaml`, so any correct repair passes. Most checks start a short-lived, digest-pinned `nicolaka/netshoot:v0.16` Pod in the lab namespace to probe the workload; set `CHECK_VERBOSE=1` to print its output. If that probe Pod cannot run (for example, its image cannot be pulled), the checker reports a check error and exits with status 2 instead of calling the lab not fixed.
 

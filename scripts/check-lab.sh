@@ -139,13 +139,18 @@ case "$num" in
     ;;
   13) fault_threads_stopped writer && pass || fail "the periodic dojo-pvc-writer is still running" ;;
   14)
-    wait_rollout "$ns" port-holder || fail "keep port-holder running; move the victim instead"
+    wait_rollout "$ns" port-holder \
+      || fail "port-holder is not rolled out and ready; the repair belongs on the victim, so leave port-holder running"
     # The broken victim never schedules, so do not spend the whole CHECK_TIMEOUT waiting for it:
     # stop as soon as the scheduler has rejected a Pod of the current revision.
     deadline=$((SECONDS + CHECK_TIMEOUT))
     until kubectl --context "$DOJO_CONTEXT" -n "$ns" rollout status deployment/victim --timeout=2s >/dev/null 2>&1; do
+      # `rollout status` returns at once for a missing Deployment; do not spin until the deadline.
+      kubectl --context "$DOJO_CONTEXT" -n "$ns" get deployment victim >/dev/null 2>&1 \
+        || fail "the victim Deployment does not exist; restore it with ./scripts/reset-lab.sh $num and repair it"
       victim_unschedulable && fail "victim still cannot schedule; its host port conflicts with a listener on the node"
       (( SECONDS < deadline )) || fail "victim is not rolled out and ready yet"
+      sleep 1
     done
     pass
     ;;

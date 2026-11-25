@@ -14,6 +14,6 @@ The backend is healthy and DNS resolves, but the application client cannot conne
 
 ## Success condition
 
-The real `client` workload can reach `backend:8080`.
+The real `client` workload can reach `backend:8080`, while the NetworkPolicy still refuses Pods without `access=allowed`. Deleting or loosening the policy does not count as a repair.
 
 From the repository root, run `./scripts/check-lab.sh 03` after you repair the scenario. Do not open `fixed.yaml` unless you want the reference repair.

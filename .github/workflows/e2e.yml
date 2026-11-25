@@ -25,7 +25,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: e2e-${{ github.ref }}
+  # Per event type, so a manual run does not cancel the nightly run on the same branch (or vice versa).
+  group: e2e-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:

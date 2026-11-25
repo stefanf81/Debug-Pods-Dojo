@@ -102,13 +102,15 @@ need_text "$LABS_MD" "ngrep -d any -W byline '.' 'tcp port 5201'" "Expected corr
 need_text "$LABS_MD" '--perf-mode disabled' "Expected gProfiler perf-less fallback is missing"
 
 # BIND dig does not apply resolv.conf search domains by default. Short Service names that are expected to resolve must use +search.
-for bad in 'dig api' 'dig backend'; do
+for name in api backend; do
+  # Match the short name anywhere a command can start (indented, after `--`, in a pipeline), but not
+  # `dig +search <name>` or an FQDN such as `dig backend.dojo-02-dns...`.
   # Lab 02 intentionally keeps one bare "dig backend" as a teaching contrast; reject other bare success examples.
-  count=$(grep -Fxc "$bad" "$LABS_MD" || true)
-  if [[ "$bad" == 'dig backend' ]]; then
-    [[ "$count" -le 1 ]] || die "Unexpected bare short-name dig examples remain: $bad"
+  count=$(grep -cE "(^|[^[:alnum:]_-])dig[[:space:]]+${name}([[:space:]]|\$)" "$LABS_MD" || true)
+  if [[ "$name" == backend ]]; then
+    [[ "$count" -le 1 ]] || die "Unexpected bare short-name dig examples remain: dig $name"
   else
-    [[ "$count" -eq 0 ]] || die "Bare short-name dig must use +search: $bad"
+    [[ "$count" -eq 0 ]] || die "Bare short-name dig must use +search: dig $name"
   fi
 done
 need_text "$LABS_MD" 'dig +search api' "Expected dig +search api examples are missing"

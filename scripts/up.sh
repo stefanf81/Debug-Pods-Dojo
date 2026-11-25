@@ -162,6 +162,9 @@ wait_nodes_stable() {
     snapshot=""
     while IFS=' ' read -r node role; do
       [[ -n "$node" ]] || continue
+      # Only cluster nodes count: a k3d tools container left behind by an interrupted image import
+      # is not restarted by `k3d cluster start` and would otherwise never look ready.
+      case "$role" in server|agent|loadbalancer) ;; *) continue ;; esac
       snapshot+="$node $(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$node" 2>/dev/null) "
       if [[ "$(docker inspect -f '{{.State.Status}}' "$node" 2>/dev/null)" != running ]]; then
         ok=0

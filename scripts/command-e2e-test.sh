@@ -121,9 +121,14 @@ run_ephemeral() {
 }
 
 run_node_debug() {
-  local node="$1" image="$2" command="$3"
+  local node="$1" image="$2" command="$3" rc=0 pod
   # --attach=true lets this non-interactive check return the debug command's output.
-  k debug "node/$node" --image="$image" --profile=sysadmin --attach=true -- sh -lc "$command"
+  k debug "node/$node" --image="$image" --profile=sysadmin --attach=true -- sh -lc "$command" || rc=$?
+  # The node debug Pod stays behind after the command exits; remove it so KEEP_CLUSTER=1 leaves a clean cluster.
+  for pod in $(k get pods -o name 2>/dev/null | grep "^pod/node-debugger-${node}-" || true); do
+    k delete "$pod" --wait=false >/dev/null 2>&1 || true
+  done
+  return "$rc"
 }
 
 k3d cluster delete "$CLUSTER" >/dev/null 2>&1 || true
