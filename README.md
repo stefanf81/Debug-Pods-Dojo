@@ -54,6 +54,8 @@ LABS="01 07" ./scripts/up.sh
 
 Running `up.sh` again is safe: it starts a stopped cluster and deploys only labs that are not deployed yet, so your repairs stay in place (use `./scripts/reset-lab.sh` or `./scripts/reset-all.sh` to start a lab over). `LABS` is also honoured by `./scripts/reset-all.sh`. When `LABS` leaves out Labs 08 and 10, `up.sh` skips building the 700 MB Arthas debug image; `./scripts/rebuild.sh` builds it later, and `DOJO_ARTHAS=1` forces it. The Ingress is published on `127.0.0.1:8080`; set `INGRESS_PORT` when creating the cluster to use another port. Both the Ingress and the Kubernetes API are bound to localhost only, because the dojo runs privileged and node-level debug Pods that must not be reachable from your network. A cluster created by an older revision still listens on every interface; `up.sh` warns about it, and `./scripts/down.sh && ./scripts/up.sh` recreates it with localhost bindings (this redeploys every lab).
 
+Every lab workload sets CPU and memory requests and limits, so one lab that runs away cannot starve the others. Debug tools you attach as ephemeral containers run inside the Pod's limits; the labs that attach heavy tools (Arthas in 08 and 10, perf in 13) have more headroom, and the Lab 06 iperf3 server has no CPU limit so throttling does not distort throughput measurements.
+
 Then:
 
 ```bash

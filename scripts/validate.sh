@@ -181,6 +181,17 @@ for file in "$ROOT"/labs/*/*.yaml; do
     || die "${file#"$ROOT"/}: $java container(s) run debug-dojo-java:local but $probes have the /health readinessProbe"
 done
 
+# Every lab container, init containers included, sets CPU and memory requests and a memory limit, so
+# one runaway lab cannot starve the others on a small Docker host. Ephemeral debug containers have no
+# resources of their own and run inside the Pod's limits.
+for file in "$ROOT"/labs/*/*.yaml; do
+  images="$(grep -oE '(^|[{ ,])image: ' "$file" | wc -l || true)"
+  requests="$(grep -oE 'requests: \{cpu: [^,}]+, memory: [^,}]+\}' "$file" | wc -l || true)"
+  limits="$(grep -oE 'limits: \{([^}]*, )?memory: [^,}]+\}' "$file" | wc -l || true)"
+  (( images == requests && images == limits )) \
+    || die "${file#"$ROOT"/}: $images container(s), but $requests set CPU+memory requests and $limits a memory limit"
+done
+
 # Every lab must appear in the LABS.md index so a new lab cannot be missed by the guide.
 for lab in "$ROOT"/labs/*; do
   [[ -d "$lab" ]] || continue

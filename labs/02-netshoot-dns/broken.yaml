@@ -14,7 +14,7 @@ spec:
     metadata: {labels: {app: backend}}
     spec:
       containers:
-        - {name: app, image: debug-dojo-java:local, imagePullPolicy: IfNotPresent, ports: [{containerPort: 8080}], readinessProbe: {httpGet: {path: /health, port: 8080}, periodSeconds: 2, timeoutSeconds: 3}}
+        - {name: app, image: debug-dojo-java:local, imagePullPolicy: IfNotPresent, ports: [{containerPort: 8080}], readinessProbe: {httpGet: {path: /health, port: 8080}, periodSeconds: 2, timeoutSeconds: 3}, resources: {requests: {cpu: 20m, memory: 64Mi}, limits: {cpu: 500m, memory: 256Mi}}}
 ---
 apiVersion: v1
 kind: Service
@@ -36,6 +36,9 @@ spec:
         - name: app
           image: debug-dojo-java:local
           imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
           readinessProbe: {httpGet: {path: /health, port: 8080}, periodSeconds: 2, timeoutSeconds: 3}
           env: [{name: DEPENDENCY_URL, value: "http://backned:8080/health"}]
           ports: [{containerPort: 8080}]

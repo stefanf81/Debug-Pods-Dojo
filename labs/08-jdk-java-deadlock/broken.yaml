@@ -18,6 +18,11 @@ spec:
         - name: app
           image: debug-dojo-java:local
           imagePullPolicy: IfNotPresent
+          # Arthas, async-profiler and JDK tools attached as ephemeral containers run inside
+          # these limits, so leave them headroom.
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {cpu: "1", memory: 512Mi}
           readinessProbe: {httpGet: {path: /health, port: 8080}, periodSeconds: 2, timeoutSeconds: 3}
           env: [{name: DOJO_MODE, value: deadlock}]
           volumeMounts: [{name: shared-tmp, mountPath: /tmp}]

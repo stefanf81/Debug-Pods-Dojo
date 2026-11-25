@@ -30,6 +30,9 @@ spec:
             - name: POSTGRES_DB
               valueFrom: {secretKeyRef: {name: postgres-auth, key: database}}
           ports: [{containerPort: 5432}]
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 512Mi}
           readinessProbe:
             exec: {command: ["pg_isready","-U","dojo","-d","dojo"]}
             periodSeconds: 3
@@ -55,6 +58,9 @@ spec:
       containers:
         - name: client
           image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
           env:
             - {name: PGUSER, value: dojo}
             - {name: PGDATABASE, value: dojo}

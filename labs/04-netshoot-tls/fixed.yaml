@@ -93,6 +93,9 @@ spec:
       containers:
         - name: nginx
           image: nginx:1.30.6-alpine@sha256:0e52bd054126cdc040b1276c0af347aeb02a41b9cfe305d6094767ac30e97949
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 200m, memory: 64Mi}
           command: ["nginx","-g","daemon off;","-c","/etc/nginx/nginx.conf"]
           ports: [{name: http, containerPort: 8080}, {name: https, containerPort: 8443}]
           volumeMounts:

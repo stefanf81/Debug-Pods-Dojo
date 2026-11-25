@@ -19,6 +19,9 @@ spec:
       containers:
         - name: holder
           image: busybox:1.37@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 100m, memory: 32Mi}
           command: ["httpd","-f","-p","18080"]
           ports: [{containerPort: 18080, hostPort: 18080}]
 ---
@@ -42,5 +45,8 @@ spec:
       containers:
         - name: victim
           image: busybox:1.37@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 100m, memory: 32Mi}
           command: ["httpd","-f","-p","18081"]
           ports: [{containerPort: 18081, hostPort: 18081}]

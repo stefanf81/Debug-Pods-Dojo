@@ -23,6 +23,9 @@ spec:
       initContainers:
         - name: prepare-volume
           image: busybox:1.37@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 100m, memory: 32Mi}
           command: ["sh","-c","chown 65532:65532 /data && chmod 0770 /data && ls -ld /data"]
           securityContext: {runAsUser: 0}
           volumeMounts: [{name: data, mountPath: /data}]
@@ -30,6 +33,9 @@ spec:
         - name: app
           image: debug-dojo-java:local
           imagePullPolicy: IfNotPresent
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
           readinessProbe: {httpGet: {path: /health, port: 8080}, periodSeconds: 2, timeoutSeconds: 3}
           env: [{name: DOJO_MODE, value: writer}, {name: WRITE_PATH, value: /data/dojo.txt}]
           volumeMounts: [{name: data, mountPath: /data}]
