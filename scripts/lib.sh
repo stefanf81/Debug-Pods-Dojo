@@ -302,19 +302,25 @@ context_exists() {
   kubectl config get-contexts "$1" >/dev/null 2>&1
 }
 
+# True when the dojo's context is the current kubectl context, or none is (the cluster was deleted
+# some other way). Check it before deleting the cluster: when k3d deletes the current context, it
+# makes some other remaining context current, not necessarily the one from before, so afterwards
+# k3d's pick would look like a deliberate switch.
+dojo_context_is_current() {
+  local current
+  current="$(kubectl config current-context 2>/dev/null || true)"
+  [[ -z "$current" || "$current" == "$DOJO_CONTEXT" ]]
+}
+
+# Switch back to the saved context when <dojo-was-current> is "yes", i.e. the dojo's context was
+# still current before the cluster was deleted. Otherwise the learner switched deliberately after
+# up.sh, and that context is left alone.
 restore_previous_context() {
-  local current file previous
+  local file previous
   file="$(context_state_file)"
   [[ -f "$file" ]] || return 0
   previous="$(head -n 1 "$file" 2>/dev/null || true)"
-  current="$(kubectl config current-context 2>/dev/null || true)"
-  if [[ -z "$previous" ]]; then
-    rm -f "$file"
-    return 0
-  fi
-  # Never override a deliberate switch: only take the context back while the dojo still owns it
-  # (or while nothing is current, which is what deleting the cluster's context leaves behind).
-  if [[ -n "$current" && "$current" != "$DOJO_CONTEXT" ]]; then
+  if [[ -z "$previous" || "${1:-}" != yes ]]; then
     rm -f "$file"
     return 0
   fi
